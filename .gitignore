@@ -1,0 +1,5 @@
+sootOutput/
+*.class
+*.py
+*.jar
+.vscode/
