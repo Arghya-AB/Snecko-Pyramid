@@ -181,7 +181,7 @@ public class SampleSceneTransform extends SceneTransformer {
 
     private static final Set<AllocObject> allObjects = new HashSet<>();
     private static final Map<String, AllocObject> canonicalObjects = new HashMap<>();
-    private static final Map<AllocObject, Set<String>> liveFields = new HashMap<>();
+    private static final Map<AllocObject, Set<SootField>> liveFields = new HashMap<>();
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
@@ -203,7 +203,7 @@ public class SampleSceneTransform extends SceneTransformer {
          * }
          */
         System.out.println("Liveness analysis:");
-        for (Map.Entry<AllocObject, Set<String>> entry : liveFields.entrySet()) {
+        for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
             System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
         }
     }
@@ -405,7 +405,7 @@ public class SampleSceneTransform extends SceneTransformer {
                     if (bases != null) {
                         for (AllocObject o : bases) {
                             if (o != UNIVERSE) {
-                                liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                                liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                             }
                         }
                         for (AllocObject o : bases) {
@@ -490,7 +490,7 @@ public class SampleSceneTransform extends SceneTransformer {
             if (!bases.isEmpty()) {
                 for (AllocObject o : bases) {
                     if (o != UNIVERSE) {
-                        liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                        liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                     }
                 }
             }
@@ -532,7 +532,7 @@ public class SampleSceneTransform extends SceneTransformer {
         if (!bases.isEmpty()) {
             for (AllocObject o : bases) {
                 if (o != UNIVERSE) {
-                    liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                    liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                 }
             }
         }
@@ -564,7 +564,7 @@ public class SampleSceneTransform extends SceneTransformer {
         if (bases != null) {
             for (AllocObject o : bases) {
                 if (o != UNIVERSE) {
-                    liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                    liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                 }
             }
         }
@@ -633,7 +633,7 @@ public class SampleSceneTransform extends SceneTransformer {
                 if (bases != null) {
                     for (AllocObject o : bases) {
                         if (o != UNIVERSE) {
-                            liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                            liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                         }
                     }
                     Set<AllocObject> seeds = new HashSet<>();
@@ -670,7 +670,7 @@ public class SampleSceneTransform extends SceneTransformer {
                 if (bases != null) {
                     for (AllocObject o : bases) {
                         if (o != UNIVERSE) {
-                            liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field.getName());
+                            liveFields.computeIfAbsent(o, k -> new HashSet<>()).add(field);
                         }
                     }
                     if (bases.contains(UNIVERSE)) {
