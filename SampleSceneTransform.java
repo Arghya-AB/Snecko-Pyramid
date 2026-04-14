@@ -181,7 +181,7 @@ public class SampleSceneTransform extends SceneTransformer {
 
     private static final Set<AllocObject> allObjects = new HashSet<>();
     private static final Map<String, AllocObject> canonicalObjects = new HashMap<>();
-    private static final Map<AllocObject, Set<SootField>> liveFields = new HashMap<>();
+    public static final Map<AllocObject, Set<SootField>> liveFields = new HashMap<>();
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {

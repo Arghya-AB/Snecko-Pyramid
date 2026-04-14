@@ -8,12 +8,11 @@ public class ClassTransformer extends SceneTransformer {
     // wip
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
-        SootClass sClass = Scene.v().getMainClass();
-        List<SootField> deadFields = new ArrayList<>();
-        if (!sClass.getFields().isEmpty()) {
-            deadFields.add(sClass.getFields().getFirst());
+        HashMap<AllocObject, Set<SootField>> liveFields = new HashMap<>(SampleSceneTransform.liveFields);
+        System.out.println("testing classtransformer");
+        for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
+            System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
         }
-        createNewClassWithoutDeadFields(sClass, deadFields);
     }
 
     /**

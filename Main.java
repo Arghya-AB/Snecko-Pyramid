@@ -1,5 +1,7 @@
 import soot.PackManager;
 import soot.Transform;
+import java.util.*;
+import soot.*;
 
 public class Main {
     public static void main(String[] args) {
@@ -26,10 +28,6 @@ public class Main {
         // SampleBodyTransform pass1 = new SampleBodyTransform();
         SampleSceneTransform pass2 = new SampleSceneTransform();
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.idfa", pass2));
-        soot.Main.main(sootArgs);
-
-        livenessResult = new HashMap<>(SampleSceneTransform.liveFields);
-
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample", new ClassTransformer()));
         soot.Main.main(sootArgs);
 
