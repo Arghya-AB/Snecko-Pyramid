@@ -13,7 +13,7 @@ public class MainClass {
             "-no-bodies-for-excluded",
             "-p", "jb", "use-original-names",
             "-keep-bytecode-offset", "-keep-offset",
-            "-main-class", "Test", "Test", "A"
+            "-main-class", "Test", "Test"
         };
 
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample", new ClassTransformer()));
