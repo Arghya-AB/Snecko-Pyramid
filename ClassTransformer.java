@@ -13,7 +13,13 @@ public class ClassTransformer extends SceneTransformer {
         for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
             System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
         }
+
+        // creating classes for all AllocObjects
+        // create SootClass, Set<SootField> pairs to prevent redundancy
+
     }
+
+
 
     /**
      * Returns true if the method body references any field in deadFields,
@@ -46,7 +52,10 @@ public class ClassTransformer extends SceneTransformer {
         return false;
     }
 
-    public void createNewClassWithoutDeadFields(SootClass originalClass, List<SootField> deadFields) {
+    public void createNewClassWithoutDeadFields(SootClass originalClass, Set<SootField> liveFields) {
+
+        // find all parent fields which are active
+        List<SootField> liveFieldList = 
 
         // 1. Create New Class Name
         String newClassName = originalClass.getName();
@@ -55,6 +64,13 @@ public class ClassTransformer extends SceneTransformer {
         }
 
         SootClass newClass = new SootClass(newClassName, originalClass.getModifiers());
+        
+        
+        
+        // needs fixing superClass may be different !!!!!!!!
+
+        
+        
         newClass.setSuperclass(originalClass.getSuperclass());
         for (SootClass interfaceClass : originalClass.getInterfaces()) {
             newClass.addInterface(interfaceClass);
@@ -107,5 +123,54 @@ public class ClassTransformer extends SceneTransformer {
         } catch (Exception e) {
             System.err.println("Failed to write new class: " + e.getMessage());
         }
+    }
+
+    List<SootField> computeActiveFieldList(SootClass originalClass, Set<SootField> liveFields) {
+        List<SootField> list = new ArrayList<>();
+        // add from original to top
+        SootClass temp = originalClass;
+        while ()
+    }
+}
+
+public class ClassFieldGroup {
+    private final SootClass sc;
+    private final Set<SootField> fields;
+
+    public ClassFieldGroup(SootClass sc, Set<SootField> fields) {
+        this.sc = sc;
+        this.fields = fields;
+    }
+
+    public SootClass getSootClass() {
+        return sc;
+    }
+
+    public Set<SootField> getFields() {
+        return fields;
+    }
+
+    // Equals implementation
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ClassFieldGroup that = (ClassFieldGroup) o;
+        return Objects.equals(sc, that.sc) && 
+               Objects.equals(fields, that.fields);
+    }
+
+    // HashCode implementation
+    @Override
+    public int hashCode() {
+        return Objects.hash(sc, fields);
+    }
+
+    @Override
+    public String toString() {
+        return "ClassFieldGroup{" +
+                "class=" + (sc != null ? sc.getName() : "null") +
+                ", fieldsCount=" + (fields != null ? fields.size() : 0) +
+                '}';
     }
 }
