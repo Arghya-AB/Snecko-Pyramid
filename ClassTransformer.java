@@ -54,8 +54,6 @@ public class ClassTransformer extends SceneTransformer {
 
     public void createNewClassWithoutDeadFields(SootClass originalClass, Set<SootField> liveFields) {
 
-        // find all parent fields which are active
-        List<SootField> liveFieldList = 
 
         // 1. Create New Class Name
         String newClassName = originalClass.getName();
@@ -132,8 +130,7 @@ public class ClassTransformer extends SceneTransformer {
         while ()
     }
 }
-
-public class ClassFieldGroup {
+class ClassFieldGroup {
     private final SootClass sc;
     private final Set<SootField> fields;
 

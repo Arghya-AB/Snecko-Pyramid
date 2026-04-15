@@ -11,20 +11,27 @@ class AllocObject {
     private final String originMethodSignature;
     private final boolean isPseudo;
     private final Set<String> callSites;
+    private final SootClass stClass;
 
-    AllocObject(int lineNumber, SootMethod originMethod) {
-        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", false);
+
+    // AllocObject(int lineNumber, SootMethod originMethod) {
+    //     this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", false);
+    // }
+
+    AllocObject(int lineNumber, SootMethod originMethod, boolean isPseudo, SootClass stClass) {
+        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", isPseudo, stClass);
     }
 
-    AllocObject(int lineNumber, SootMethod originMethod, boolean isPseudo) {
-        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", isPseudo);
-    }
-
-    AllocObject(int lineNumber, String originMethodSignature, boolean isPseudo) {
+    AllocObject(int lineNumber, String originMethodSignature, boolean isPseudo, SootClass stClass) {
         this.lineNumber = lineNumber;
         this.originMethodSignature = originMethodSignature;
         this.isPseudo = isPseudo;
         this.callSites = new HashSet<>();
+        this.stClass = stClass;
+    }
+
+    SootClass getStClass() {
+        return stClass;
     }
 
     boolean isPseudo() {
@@ -172,7 +179,7 @@ class InOutState {
 }
 
 public class SampleSceneTransform extends SceneTransformer {
-    public static final AllocObject UNIVERSE = new AllocObject(-2, "UNIVERSE", true) {
+    public static final AllocObject UNIVERSE = new AllocObject(-2, "UNIVERSE", true, null) {
         @Override
         public String toString() {
             return "U";
@@ -474,7 +481,24 @@ public class SampleSceneTransform extends SceneTransformer {
         String allocKey = (isPseudo ? "P" : "O") + line + "@" + method.getSignature() + allocSuffix;
         AllocObject obj = canonicalObjects.get(allocKey);
         if (obj == null) {
-            obj = new AllocObject(line, method.getSignature() + allocSuffix, isPseudo);
+            SootClass allocClass = null;
+            if (right instanceof NewExpr) {
+                Type type = ((NewExpr) right).getBaseType();
+                if (type instanceof RefType) {
+                    allocClass = ((RefType) type).getSootClass();
+                }
+            } else {
+                Type type = null;
+                if (left instanceof Local) {
+                    type = ((Local) left).getType();
+                } else if (left instanceof InstanceFieldRef) {
+                    type = ((InstanceFieldRef) left).getField().getType();
+                }
+                if (type instanceof RefType) {
+                    allocClass = ((RefType) type).getSootClass();
+                }
+            }
+            obj = new AllocObject(line, method.getSignature() + allocSuffix, isPseudo, allocClass);
             canonicalObjects.put(allocKey, obj);
             allObjects.add(obj);
         }
@@ -615,7 +639,7 @@ public class SampleSceneTransform extends SceneTransformer {
             String allocKey = "P" + line + "@" + method.getSignature() + allocSuffix;
             AllocObject obj = canonicalObjects.get(allocKey);
             if (obj == null) {
-                obj = new AllocObject(line, method.getSignature() + allocSuffix, true);
+                obj = new AllocObject(line, method.getSignature() + allocSuffix, true, null);
                 canonicalObjects.put(allocKey, obj);
                 allObjects.add(obj);
             }
@@ -700,7 +724,7 @@ public class SampleSceneTransform extends SceneTransformer {
             String allocKey = "P" + line + "@" + callerMethod.getSignature() + allocSuffix;
             AllocObject obj = canonicalObjects.get(allocKey);
             if (obj == null) {
-                obj = new AllocObject(line, callerMethod.getSignature() + allocSuffix, true);
+                obj = new AllocObject(line, callerMethod.getSignature() + allocSuffix, true, null);
                 canonicalObjects.put(allocKey, obj);
                 allObjects.add(obj);
             }
@@ -736,7 +760,7 @@ public class SampleSceneTransform extends SceneTransformer {
                     String allocKey = "P" + line + "@" + callerMethod.getSignature() + allocSuffix;
                     AllocObject obj = canonicalObjects.get(allocKey);
                     if (obj == null) {
-                        obj = new AllocObject(line, callerMethod.getSignature() + allocSuffix, true);
+                        obj = new AllocObject(line, callerMethod.getSignature() + allocSuffix, true, null);
                         canonicalObjects.put(allocKey, obj);
                         allObjects.add(obj);
                     }
