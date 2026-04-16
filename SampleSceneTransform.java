@@ -1,7 +1,6 @@
 import java.util.*;
 import soot.*;
 import soot.jimple.*;
-import soot.tagkit.*;
 import soot.toolkits.graph.*;
 
 // we need to handle arrays, array lists and just liveness in general
@@ -13,9 +12,9 @@ class AllocObject {
     private final Set<String> callSites;
     private final SootClass stClass;
 
-
     // AllocObject(int lineNumber, SootMethod originMethod) {
-    //     this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", false);
+    // this(lineNumber, originMethod != null ? originMethod.getSignature() :
+    // "UNIVERSE", false);
     // }
 
     AllocObject(int lineNumber, SootMethod originMethod, boolean isPseudo, SootClass stClass) {
@@ -189,12 +188,18 @@ public class SampleSceneTransform extends SceneTransformer {
     private static final Set<AllocObject> allObjects = new HashSet<>();
     private static final Map<String, AllocObject> canonicalObjects = new HashMap<>();
     public static final Map<AllocObject, Set<SootField>> liveFields = new HashMap<>();
+    private final Map<Unit, Integer> unitIds = new IdentityHashMap<>();
+    private int nextUnitId = 1;
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
         allObjects.clear();
         canonicalObjects.clear();
         liveFields.clear();
+        unitIds.clear();
+        nextUnitId = 1;
+
+        initializeUnitIdsAcrossScene();
 
         SootClass mainClass = Scene.v().getMainClass();
         SootMethod mainMethod = mainClass.getMethodByName("main");
@@ -346,16 +351,35 @@ public class SampleSceneTransform extends SceneTransformer {
     }
 
     private int getLineNumber(Unit u) {
-        if (u instanceof Stmt) {
-            Stmt s = (Stmt) u;
-            Tag tag = s.getTag("LineNumberTag");
-            if (tag instanceof LineNumberTag)
-                return ((LineNumberTag) tag).getLineNumber();
-            Tag sourceTag = s.getTag("SourceLineNumberTag");
-            if (sourceTag instanceof soot.tagkit.SourceLineNumberTag)
-                return ((soot.tagkit.SourceLineNumberTag) sourceTag).getLineNumber();
+        Integer existing = unitIds.get(u);
+        if (existing != null) {
+            return existing;
         }
-        return -1;
+        int assigned = nextUnitId++;
+        unitIds.put(u, assigned);
+        return assigned;
+    }
+
+    private void initializeUnitIdsAcrossScene() {
+        for (SootClass cls : Scene.v().getApplicationClasses()) {
+            for (SootMethod m : cls.getMethods()) {
+                if (!m.isConcrete()) {
+                    continue;
+                }
+                Body body;
+                try {
+                    body = m.retrieveActiveBody();
+                } catch (RuntimeException e) {
+                    continue;
+                }
+                if (body == null) {
+                    continue;
+                }
+                for (Unit u : body.getUnits()) {
+                    getLineNumber(u);
+                }
+            }
+        }
     }
 
     private Set<AllocObject> processStatement(Unit stmt, UnitState in, UnitState out,
