@@ -2,7 +2,6 @@ import java.util.*;
 import java.io.*;
 import soot.*;
 import soot.jimple.*;
-import soot.options.Options;
 import soot.util.Chain;
 
 public class ClassTransformer extends SceneTransformer {
@@ -43,17 +42,16 @@ public class ClassTransformer extends SceneTransformer {
         // only keeping liveFields which are part of allFields i.e. intersection
         liveFields.retainAll(allFields);
         // find all dead fields
-        Set<SootField> deadFields = getAllFields(currClass);
+        Set<SootField> deadFields = new HashSet<>(getAllFields(currClass));
         // removing static fields from dead fields
-        for (SootField field: deadFields) {
-            if (field.isStatic()) {
-                deadFields.remove(field);
-            }
-        }
+        deadFields.removeIf(field -> field.isStatic());
         deadFields.removeAll(liveFields);
 
         // create class
         String newClassName = currClass.getName();
+        if (liveFields.size() == 0) {
+            newClassName = newClassName + "_<empty>" ;
+        }
         for (SootField field : liveFields) {
             newClassName = newClassName + "_" + field.getName();
         }

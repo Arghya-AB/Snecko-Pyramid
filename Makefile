@@ -1,15 +1,18 @@
 SHELL:= /bin/bash
-FOLDER = Test2
+TEST = TestCase1_Branch
 
-all : clean compile run
+all : clean copy compile run remove
 
+remove:
+	rm -f ./$(TEST).java
+copy:
+	cp ./testcases/$(TEST)/$(TEST).java ./$(TEST).java
 run:
-	java -cp .:soot-4.6.0-jar-with-dependencies.jar Main2 $(FOLDER)
+	java -cp .:soot-4.6.0-jar-with-dependencies.jar Main $(TEST)
 
 compile:
-	javac ./testcases/$(FOLDER)/Test.java
-	javac -cp .:soot-4.6.0-jar-with-dependencies.jar Main2.java
+	javac -cp .:soot-4.6.0-jar-with-dependencies.jar Main.java $(TEST).java
 clean:
 	rm -f ./sootOutput/*.jimple
-	rm -f ./testcases/$(FOLDER)/*.class
+	rm -f ./testcases/$(TEST)/*.class
 	rm -f *.class
