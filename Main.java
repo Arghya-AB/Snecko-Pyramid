@@ -1,9 +1,7 @@
-import soot.PackManager;
-import soot.Transform;
-import java.util.*;
 import soot.*;
 
 public class Main {
+
     public static void main(String[] args) {
         String mainClass = args.length > 0 ? args[0] : "Test";
         int additionalArgs = args.length > 0 ? args.length : 3;
@@ -26,9 +24,18 @@ public class Main {
 
         // Create transformer for analysis
         // SampleBodyTransform pass1 = new SampleBodyTransform();
-        SampleSceneTransform pass2 = new SampleSceneTransform();
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.idfa", pass2));
-        PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample", new ClassTransformer()));
+        SampleSceneTransform pass1 = new SampleSceneTransform();
+        ClassTransformer pass2 = new ClassTransformer();
+        SampleSceneTransform pass3 = new SampleSceneTransform();
+        ReplacementTransformer pass4 = new ReplacementTransformer();
+        // initial analysis
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.idfa", pass1));
+        // create classes for replacement
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample0", pass2));
+        // analyze again to account for circular situations
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample1", pass3));
+        // replace all relevant allocation sites with new classes
+        PackManager.v().getPack("wjtp").add(new Transform("wjtp.sample2", pass4));
         soot.Main.main(sootArgs);
 
     }

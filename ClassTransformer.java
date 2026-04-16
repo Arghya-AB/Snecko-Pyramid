@@ -6,7 +6,7 @@ import soot.util.Chain;
 
 public class ClassTransformer extends SceneTransformer {
     // wip
-    private static HashMap<ClassFieldGroup, SootClass> mapping = new HashMap<>();
+    public static HashMap<ClassFieldGroup, SootClass> mapping = new HashMap<>();
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
@@ -15,10 +15,10 @@ public class ClassTransformer extends SceneTransformer {
         mapping.put(new ClassFieldGroup(objectClass, new HashSet<>()), objectClass);
         
         HashMap<AllocObject, Set<SootField>> liveFields = new HashMap<>(SampleSceneTransform.liveFields);
-        System.out.println("testing classtransformer");
-        for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
-            System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
-        }
+        System.out.println("classtransformer working");
+        // for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
+        //     System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
+        // }
 
         // creating classes for all AllocObjects
         // create SootClass, Set<SootField> pairs to prevent redundancy
@@ -303,48 +303,48 @@ public class ClassTransformer extends SceneTransformer {
 
     */
 }
-class ClassFieldGroup {
-    private final SootClass sc;
-    private final Set<SootField> fields;
+// class ClassFieldGroup {
+//     private final SootClass sc;
+//     private final Set<SootField> fields;
 
-    public ClassFieldGroup(SootClass sc, Set<SootField> fields) {
-        this.sc = sc;
-        Set<SootField> liveFields = new HashSet<>(fields);
-        Set<SootField> allFields = ClassTransformer.getAllFields(sc);
-        // only keeping liveFields which are part of allFields i.e. intersection
-        liveFields.retainAll(allFields);
-        this.fields = liveFields;
-    }
+//     public ClassFieldGroup(SootClass sc, Set<SootField> fields) {
+//         this.sc = sc;
+//         Set<SootField> liveFields = new HashSet<>(fields);
+//         Set<SootField> allFields = ClassTransformer.getAllFields(sc);
+//         // only keeping liveFields which are part of allFields i.e. intersection
+//         liveFields.retainAll(allFields);
+//         this.fields = liveFields;
+//     }
 
-    public SootClass getSootClass() {
-        return sc;
-    }
+//     public SootClass getSootClass() {
+//         return sc;
+//     }
 
-    public Set<SootField> getFields() {
-        return fields;
-    }
+//     public Set<SootField> getFields() {
+//         return fields;
+//     }
 
-    // Equals implementation
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ClassFieldGroup that = (ClassFieldGroup) o;
-        return Objects.equals(sc, that.sc) && 
-               Objects.equals(fields, that.fields);
-    }
+//     // Equals implementation
+//     @Override
+//     public boolean equals(Object o) {
+//         if (this == o) return true;
+//         if (o == null || getClass() != o.getClass()) return false;
+//         ClassFieldGroup that = (ClassFieldGroup) o;
+//         return Objects.equals(sc, that.sc) && 
+//                Objects.equals(fields, that.fields);
+//     }
 
-    // HashCode implementation
-    @Override
-    public int hashCode() {
-        return Objects.hash(sc, fields);
-    }
+//     // HashCode implementation
+//     @Override
+//     public int hashCode() {
+//         return Objects.hash(sc, fields);
+//     }
 
-    @Override
-    public String toString() {
-        return "ClassFieldGroup{" +
-                "class=" + (sc != null ? sc.getName() : "null") +
-                ", fieldsCount=" + (fields != null ? fields.size() : 0) +
-                '}';
-    }
-}
+//     @Override
+//     public String toString() {
+//         return "ClassFieldGroup{" +
+//                 "class=" + (sc != null ? sc.getName() : "null") +
+//                 ", fieldsCount=" + (fields != null ? fields.size() : 0) +
+//                 '}';
+//     }
+// }
