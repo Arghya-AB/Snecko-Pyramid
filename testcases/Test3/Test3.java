@@ -19,6 +19,9 @@ class C extends B {
     public void set_f3() {
         this.f3 = -15;
     }
+    public void set_f3(B input) {
+        this.f3 = 156;
+    }
 }
 public class Test3 {
     public static void main(String[] args) {

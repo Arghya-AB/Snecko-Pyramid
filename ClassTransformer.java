@@ -1,4 +1,5 @@
 import java.util.*;
+
 import java.io.*;
 import soot.*;
 import soot.jimple.*;
@@ -7,6 +8,8 @@ import soot.util.Chain;
 public class ClassTransformer extends SceneTransformer {
     // wip
     public static HashMap<ClassFieldGroup, SootClass> mapping = new HashMap<>();
+    // base class -> interface class mapping
+    public static HashMap<SootClass, SootClass> classInterfaceMapping = new HashMap<>();
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
@@ -32,6 +35,21 @@ public class ClassTransformer extends SceneTransformer {
             // call function to create class for cg if not in mapping
             classCreator(cg);
         }
+
+        // printing all classes for debugging
+        System.out.println("Printing jimple to for all classes:");
+        for (SootClass sc: Scene.v().getApplicationClasses()) {
+            String outDir = SourceLocator.v().getOutputDir();
+            String fileName = outDir + File.separator + sc + ".jimple";
+            try (PrintWriter writer = new PrintWriter(
+                    new OutputStreamWriter(new FileOutputStream(fileName)))) {
+                Printer.v().printTo(sc, writer);
+                System.out.println("Successfully wrote: " + fileName);
+            } catch (Exception e) {
+                System.err.println("Failed to write new class: " + e.getMessage());
+            }
+        }
+        
     }
 
     private static void classCreator(ClassFieldGroup input) {
@@ -90,8 +108,13 @@ public class ClassTransformer extends SceneTransformer {
             // check if method is a constructor, if a constructor then, change super call.
             
             if (!method.isConstructor() && referencesDeadField(method, deadFields)) {
-                System.out.println("Skipping method (references dead field): "
+                System.out.println("Creating default method (references dead field): "
                     + method.getSignature());
+
+                // adding empty method instead
+                SootMethod newMethod = createDefaultMethod(method);
+                newMethod.setSource(null);
+                newClass.addMethod(newMethod);
                 continue;                          // ← drop the method entirely
             }
 
@@ -105,11 +128,17 @@ public class ClassTransformer extends SceneTransformer {
 
             if (method.hasActiveBody()) {
                 newMethod.setActiveBody((Body) method.getActiveBody().clone());
+            } else if (method.isConcrete()) {
+                // This is the CRITICAL part for the error you're seeing
+                // If it's a concrete method but doesn't have an active body yet, retrieve it
+                newMethod.setActiveBody((Body) method.retrieveActiveBody().clone());
             }
 
             if (method.isConstructor()) {
                 transformConstructor(newMethod, currSuperClass, currClass.getSuperclass());
             }
+
+            newMethod.setSource(null);
             newClass.addMethod(newMethod);
         }
 
@@ -195,6 +224,65 @@ public class ClassTransformer extends SceneTransformer {
         return allFields;
     }
 
+    public static SootMethod createDefaultMethod(SootMethod sourceMethod) {
+        String newName = sourceMethod.getName();
+        
+        SootMethod newMethod = new SootMethod(
+            newName,
+            sourceMethod.getParameterTypes(),
+            sourceMethod.getReturnType(),
+            sourceMethod.getModifiers() & ~Modifier.ABSTRACT
+        );
+
+        JimpleBody body = Jimple.v().newBody(newMethod);
+        newMethod.setActiveBody(body);
+
+        // 1. Handle 'this' for non-static methods
+        if (!newMethod.isStatic()) {
+            Local thisLocal = Jimple.v().newLocal("this", sourceMethod.getDeclaringClass().getType());
+            body.getLocals().add(thisLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sourceMethod.getDeclaringClass().getType())));
+        }
+
+        // 2. Handle Parameters (Required for valid Jimple)
+        for (int i = 0; i < sourceMethod.getParameterCount(); i++) {
+            Type paramType = sourceMethod.getParameterType(i);
+            Local paramLocal = Jimple.v().newLocal("param" + i, paramType);
+            body.getLocals().add(paramLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(paramLocal, Jimple.v().newParameterRef(paramType, i)));
+        }
+
+        // 3. Generate correct Return Statement
+        Type retType = sourceMethod.getReturnType();
+        if (retType instanceof VoidType) {
+            body.getUnits().add(Jimple.v().newReturnVoidStmt());
+        }
+        else {
+            body.getUnits().add(Jimple.v().newReturnStmt(getDefaultValue(retType)));
+        }
+        
+        return newMethod;
+    }
+
+    private static Value getDefaultValue(Type t) {
+        if (t instanceof IntType || t instanceof CharType || t instanceof BooleanType || 
+            t instanceof ByteType || t instanceof ShortType) {
+            return IntConstant.v(0);
+        } else if (t instanceof LongType) {
+            return LongConstant.v(0L);
+        } else if (t instanceof FloatType) {
+            return FloatConstant.v(0.0f);
+        } else if (t instanceof DoubleType) {
+            return DoubleConstant.v(0.0);
+        } else if (t instanceof VoidType) {
+            // Technically this helper shouldn't be called for Void, 
+            // but we'll handle it just in case.
+            return null; 
+        } else {
+            // Any RefType, ArrayType, etc.
+            return NullConstant.v();
+        }
+    }
 
     /**
      * Returns true if the method body references any field in deadFields,
@@ -208,6 +296,10 @@ public class ClassTransformer extends SceneTransformer {
 
 
     private static boolean referencesDeadField(SootMethod method, Set<SootField> deadFields) {
+        if (method.isConcrete() && !method.hasActiveBody()) {
+            method.retrieveActiveBody();
+        }
+
         if (!method.hasActiveBody()) {
             return false;
         }

@@ -28,6 +28,7 @@ public class Main {
         ClassTransformer pass2 = new ClassTransformer();
         SampleSceneTransform pass3 = new SampleSceneTransform();
         ReplacementTransformer pass4 = new ReplacementTransformer();
+        
         // initial analysis
         PackManager.v().getPack("wjtp").add(new Transform("wjtp.idfa", pass1));
         // create classes for replacement
