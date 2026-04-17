@@ -13,10 +13,12 @@ public class ClassTransformer extends SceneTransformer {
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
+
         // registering java.lang.Object
         SootClass objectClass = Scene.v().getObjectType().getSootClass();
         mapping.put(new ClassFieldGroup(objectClass, new HashSet<>()), objectClass);
-        
+        classInterfaceMapping.put(objectClass, null);
+
         HashMap<AllocObject, Set<SootField>> liveFields = new HashMap<>(SampleSceneTransform.liveFields);
         System.out.println("classtransformer working");
         // for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
@@ -24,11 +26,17 @@ public class ClassTransformer extends SceneTransformer {
         // }
 
 
+        List<SootClass> applicationClasses = new ArrayList<>(Scene.v().getApplicationClasses());
 
         // add default getters and setters for all classes to all classes 
-        for (SootClass sc: Scene.v().getApplicationClasses()) {
+        for (SootClass sc: applicationClasses) {
             addGettersToClass(sc);
         }
+
+        // create interfaces
+        for (SootClass sc: applicationClasses) {
+            createInterfaceFromClass(sc);
+        } 
 
         // creating classes for all AllocObjects
         // create SootClass, Set<SootField> pairs to prevent redundancy
@@ -43,9 +51,12 @@ public class ClassTransformer extends SceneTransformer {
             classCreator(cg);
         }
 
+
+        applicationClasses = new ArrayList<>(Scene.v().getApplicationClasses());
+
         // printing all classes for debugging
         System.out.println("Printing jimple to for all classes:");
-        for (SootClass sc: Scene.v().getApplicationClasses()) {
+        for (SootClass sc: applicationClasses) {
             String outDir = SourceLocator.v().getOutputDir();
             String fileName = outDir + File.separator + sc + ".jimple";
             try (PrintWriter writer = new PrintWriter(
@@ -73,9 +84,9 @@ public class ClassTransformer extends SceneTransformer {
         deadFields.removeAll(liveFields);
 
         // create class
-        String newClassName = currClass.getName();
+        String newClassName = currClass.getName() + "_SAB";
         if (liveFields.size() == 0) {
-            newClassName = newClassName + "_SAB_empty" ;
+            newClassName = newClassName + "_empty" ;
         }
         for (SootField field : liveFields) {
             newClassName = newClassName + "_" + field.getName();
@@ -114,9 +125,9 @@ public class ClassTransformer extends SceneTransformer {
         for (SootMethod method : currClass.getMethods()) {
             // if method is a getter / setter then skip
             String methodName = method.getName();
-            if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
-                continue;
-            }
+            // if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
+            //     continue;
+            // }
 
             // check if method is a constructor, if a constructor then, change super call.
             
@@ -126,6 +137,10 @@ public class ClassTransformer extends SceneTransformer {
 
                 // adding empty method instead
                 SootMethod newMethod = createDefaultMethod(method);
+                if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
+                    if (!method.isStatic())
+                    replaceClassInMethod(newMethod, currClass, newClass);                
+                }
                 newMethod.setSource(null);
                 newClass.addMethod(newMethod);
                 continue;                          // ← drop the method entirely
@@ -151,11 +166,16 @@ public class ClassTransformer extends SceneTransformer {
                 transformConstructor(newMethod, currSuperClass, currClass.getSuperclass());
             }
 
+            if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
+                if (!method.isStatic())
+                replaceClassInMethod(newMethod, currClass, newClass);                
+            }
+
             newMethod.setSource(null);
             newClass.addMethod(newMethod);
         }
 
-        addGettersToClass(newClass);
+        // addGettersToClass(newClass);
 
         // registering in scene
         
@@ -185,7 +205,7 @@ public class ClassTransformer extends SceneTransformer {
         Set<SootField> deadFields = new HashSet<>(allFields);
         deadFields.removeAll(liveFields);
         // find deadField getters which are part of baseClass
-        
+
         
         // for all deadFields create a getter which returns default value
         for (SootField field : deadFields) {
@@ -194,56 +214,250 @@ public class ClassTransformer extends SceneTransformer {
     }
 
     public static void addGettersToClass(SootClass sc) {
-        // We use a copy of the field list to avoid ConcurrentModificationException 
-        // if we were adding fields (though here we are only reading them).
-        List<SootField> fields = new ArrayList<>(getAllFields(sc));
+    // Get all fields from the hierarchy
+    List<SootField> fields = new ArrayList<>(getAllFields(sc));
 
-        for (SootField field : fields) {
-            // 1. Define Method Metadata
-            String methodName = "get_SAB_" + sc.getShortName() + field.getName();
-            Type returnType = field.getType();
-            List<Type> parameterTypes = Collections.emptyList();
-            int modifiers = Modifier.PUBLIC;
+    for (SootField field : fields) {
 
-            // 2. Create the SootMethod
-            SootMethod getter = new SootMethod(methodName, parameterTypes, returnType, modifiers);
-            
-            // 3. Create the JimpleBody
-            JimpleBody body = Jimple.v().newBody(getter);
-            getter.setActiveBody(body);
-            getter.setSource(null); // Mark as synthetic
+        // find appropriate class containing the given SootField
+        SootClass owner = field.getDeclaringClass();
 
-            // 4. Identity Statement for 'this' (Required for Instance Field Access)
-            Local thisLocal = Jimple.v().newLocal("this", sc.getType());
+        // 1. Define Method Metadata
+        String methodName = "get_SAB_" + owner.getShortName() + field.getName();
+        Type returnType = field.getType();
+        int modifiers = Modifier.PUBLIC;
+        if (field.isStatic()) {
+            modifiers |= Modifier.STATIC;
+        }
+
+        SootMethod getter = new SootMethod(methodName, new ArrayList<>(), returnType, modifiers);
+        JimpleBody body = Jimple.v().newBody(getter);
+        getter.setActiveBody(body);
+        getter.setSource(null);
+
+        // 2. Setup 'this' (only for instance fields)
+        Local thisLocal = null;
+        if (!field.isStatic()) {
+            thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
             body.getLocals().add(thisLocal);
-            body.getUnits().add(Jimple.v().newIdentityStmt(
-                thisLocal, 
-                Jimple.v().newThisRef(sc.getType())
-            ));
+            body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, 
+                Jimple.v().newThisRef(sc.getType())));
+        }
 
-            // 5. Create Local for the return value
-            Local retLocal = Jimple.v().newLocal("retVal", returnType);
-            body.getLocals().add(retLocal);
+        // 3. Create Local for the return value
+        Local retLocal = Jimple.v().newLocal("retVal", returnType);
+        body.getLocals().add(retLocal);
 
-            // 6. Generate the field access: retVal = this.field
-            // Note: Use newStaticFieldRef(field.makeRef()) if the field is static
-            Value fieldRef;
-            if (field.isStatic()) {
-                fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
-            }
-            else {
+        // 4. Generate Field Access
+        Value fieldRef;
+        if (field.isStatic()) {
+            fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+        } else {
+            // Logic for inheritance: Check if field is from a parent
+            
+            if (owner.equals(sc)) {
+                // Field is part of the class itself
                 fieldRef = Jimple.v().newInstanceFieldRef(thisLocal, field.makeRef());
+            } else {
+                // Field is derived from a parent - apply type cast
+                // Create a local variable of the parent's type
+
+                Local parentLocal = Jimple.v().newLocal("parentThis", owner.getType());
+                body.getLocals().add(parentLocal);
+                
+                // parentThis = (ParentClass) this
+                CastExpr cast = Jimple.v().newCastExpr(thisLocal, owner.getType());
+                body.getUnits().add(Jimple.v().newAssignStmt(parentLocal, cast));
+                
+                // fieldRef = parentThis.field
+                fieldRef = Jimple.v().newInstanceFieldRef(parentLocal, field.makeRef());
+            }
+        }
+
+        // 5. Assign and Return
+        body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
+        body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
+
+        // 6. Add to class
+        sc.addMethod(getter);
+    }
+}
+    
+    public SootClass createInterfaceFromClass(SootClass originalClass) {
+        // check if already exists
+        if (classInterfaceMapping.get(originalClass) != null) {
+            return classInterfaceMapping.get(originalClass);
+        }
+        else if (originalClass == Scene.v().getObjectType().getSootClass()) {
+            return null;
+        }
+        // 1. Define the Interface Name and Modifiers
+        String interfaceName = originalClass.getName() + "Interface";
+        SootClass newInterface = new SootClass(interfaceName, Modifier.PUBLIC | Modifier.INTERFACE | Modifier.ABSTRACT);
+        
+        // 2. Interfaces must have java.lang.Object as superclass in Soot
+        newInterface.setSuperclass(Scene.v().getSootClass("java.lang.Object"));
+
+        // add parent interface
+        SootClass parentClass = originalClass.getSuperclass();
+        SootClass parentInterface = classInterfaceMapping.get(parentClass);
+        if (parentInterface == null) {
+            createInterfaceFromClass(parentClass);
+            parentInterface = classInterfaceMapping.get(parentClass);
+        }
+        if (parentInterface != null) {
+            newInterface.addInterface(parentInterface);
+        }
+
+        // 3. Clone Method Signatures
+        for (SootMethod originalMethod : originalClass.getMethods()) {
+            // Skip constructors (<init>) and static initializers (<clinit>)
+            if (originalMethod.isConstructor() || originalMethod.isStaticInitializer()) {
+                continue;
             }
 
-            body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
+            // Interfaces generally shouldn't contain private/protected method declarations
+            if (!originalMethod.isPublic()) {
+                continue;
+            }
 
-            // 7. Return the value
-            body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
+            // 4. Create the abstract method for the interface
+            // Note: Interface methods are implicitly PUBLIC and ABSTRACT
+            SootMethod interfaceMethod = new SootMethod(
+                originalMethod.getName(),
+                originalMethod.getParameterTypes(),
+                originalMethod.getReturnType(),
+                Modifier.PUBLIC | Modifier.ABSTRACT,
+                originalMethod.getExceptions()
+            );
 
-            // 8. Add the method to the class
-            sc.addMethod(getter);
+            // 5. Add to the interface
+            newInterface.addMethod(interfaceMethod);
+        }
+
+        // 6. Register the interface in the Scene
+        Scene.v().addClass(newInterface);
+        newInterface.setApplicationClass();
+        
+        classInterfaceMapping.put(originalClass, newInterface);
+        originalClass.addInterface(newInterface);
+
+        return newInterface;
+    }
+
+    public static void replaceClassInMethod(SootMethod method, SootClass oldClass, SootClass newClass) {
+        if (!method.hasActiveBody()) return;
+
+        Body body = method.getActiveBody();
+        RefType oldType = oldClass.getType();
+        RefType newType = newClass.getType();
+
+        // 1. Update Local Variable Types (Handles the "B this;" declaration)
+        for (Local local : body.getLocals()) {
+            if (local.getType().equals(oldType)) {
+                local.setType(newType);
+            }
+        }
+
+        // 2. Update the Units (Instructions)
+        for (Unit unit : body.getUnits()) {
+            
+            // Handle Identity Statements: this := @this: B -> this := @this: NewClass
+            if (unit instanceof IdentityStmt) {
+                IdentityStmt is = (IdentityStmt) unit;
+                if (is.getRightOp() instanceof ThisRef) {
+                    ThisRef tr = (ThisRef) is.getRightOp();
+                    if (tr.getType().equals(oldType)) {
+                        is.setRightOp(Jimple.v().newThisRef(newType));
+                    }
+                } else if (is.getRightOp() instanceof ParameterRef) {
+                    ParameterRef pr = (ParameterRef) is.getRightOp();
+                    if (pr.getType().equals(oldType)) {
+                        is.setRightOp(Jimple.v().newParameterRef(newType, pr.getIndex()));
+                    }
+                }
+            }
+
+            // Iterate through all ValueBoxes (Casts, FieldRefs, etc.)
+            for (ValueBox box : unit.getUseAndDefBoxes()) {
+                Value val = box.getValue();
+
+                // Handle Type Casts: (A) this -> (A) this (no change if casting TO parent)
+                // But if the cast itself is TO the old class: (B) x -> (NewClass) x
+                if (val instanceof CastExpr) {
+                    CastExpr cast = (CastExpr) val;
+                    if (cast.getCastType().equals(oldType)) {
+                        cast.setCastType(newType);
+                    }
+                }
+
+                // Handle Field References: <B: int f2> -> <NewClass: int f2>
+                if (val instanceof FieldRef) {
+                    FieldRef fr = (FieldRef) val;
+                    if (fr.getFieldRef().declaringClass().equals(oldClass)) {
+                        fr.setFieldRef(Scene.v().makeFieldRef(
+                            newClass,
+                            fr.getFieldRef().name(),
+                            fr.getFieldRef().type(),
+                            fr.getFieldRef().isStatic()
+                        ));
+                    }
+                }
+                
+            }
         }
     }
+    // public static void addGettersToClass(SootClass sc) {
+    //     // We use a copy of the field list to avoid ConcurrentModificationException 
+    //     // if we were adding fields (though here we are only reading them).
+    //     List<SootField> fields = new ArrayList<>(getAllFields(sc));
+
+    //     for (SootField field : fields) {
+    //         // 1. Define Method Metadata
+    //         String methodName = "get_SAB_" + sc.getShortName() + field.getName();
+    //         Type returnType = field.getType();
+    //         List<Type> parameterTypes = Collections.emptyList();
+    //         int modifiers = Modifier.PUBLIC;
+
+    //         // 2. Create the SootMethod
+    //         SootMethod getter = new SootMethod(methodName, parameterTypes, returnType, modifiers);
+            
+    //         // 3. Create the JimpleBody
+    //         JimpleBody body = Jimple.v().newBody(getter);
+    //         getter.setActiveBody(body);
+    //         getter.setSource(null); // Mark as synthetic
+
+    //         // 4. Identity Statement for 'this' (Required for Instance Field Access)
+    //         Local thisLocal = Jimple.v().newLocal("this", sc.getType());
+    //         body.getLocals().add(thisLocal);
+    //         body.getUnits().add(Jimple.v().newIdentityStmt(
+    //             thisLocal, 
+    //             Jimple.v().newThisRef(sc.getType())
+    //         ));
+
+    //         // 5. Create Local for the return value
+    //         Local retLocal = Jimple.v().newLocal("retVal", returnType);
+    //         body.getLocals().add(retLocal);
+
+    //         // 6. Generate the field access: retVal = this.field
+    //         // Note: Use newStaticFieldRef(field.makeRef()) if the field is static
+    //         Value fieldRef;
+    //         if (field.isStatic()) {
+    //             fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+    //         }
+    //         else {
+    //             fieldRef = Jimple.v().newInstanceFieldRef(thisLocal, field.makeRef());
+    //         }
+
+    //         body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
+
+    //         // 7. Return the value
+    //         body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
+
+    //         // 8. Add the method to the class
+    //         sc.addMethod(getter);
+    //     }
+    // }
 
     public static void transformConstructor(SootMethod constructor, SootClass newSuperClass, SootClass oldSuperClass) {
         if (!constructor.hasActiveBody()) return;
