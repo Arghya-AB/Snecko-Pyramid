@@ -31,12 +31,18 @@ public class ClassTransformer extends SceneTransformer {
         // add default getters and setters for all classes to all classes 
         for (SootClass sc: applicationClasses) {
             addGettersToClass(sc);
+            addSettersToClass(sc);
         }
 
         // create interfaces
         for (SootClass sc: applicationClasses) {
             createInterfaceFromClass(sc);
         } 
+
+        // change all interface getter and setter return type and params
+        for (SootClass sc: applicationClasses) {
+            interfaceTypeFixer(classInterfaceMapping.get(sc));
+        }
 
         // change all instances of classes to class interface in application classes
 
@@ -94,7 +100,7 @@ public class ClassTransformer extends SceneTransformer {
             newClassName = newClassName + "_empty" ;
         }
         for (SootField field : liveFields) {
-            newClassName = newClassName + "_" + field.getName();
+            newClassName = newClassName + "_" + field.getDeclaringClass().getName() + field.getName();
         }
 
         SootClass newClass = new SootClass(newClassName, currClass.getModifiers());
@@ -141,9 +147,9 @@ public class ClassTransformer extends SceneTransformer {
 
                 // adding empty method instead
                 SootMethod newMethod = createDefaultMethod(method);
-                if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
-                    if (!method.isStatic())
-                    replaceClassInMethod(newMethod, currClass, newClass, liveFields);                
+                if (methodName.startsWith("get_SAB")) {
+                    // if (!method.isStatic())
+                    replaceClassInMethodForGet(newMethod, currClass, newClass, liveFields);                
                 }
                 newMethod.setSource(null);
                 newClass.addMethod(newMethod);
@@ -170,16 +176,14 @@ public class ClassTransformer extends SceneTransformer {
                 transformConstructor(newMethod, currSuperClass, currClass.getSuperclass());
             }
 
-            if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
-                if (!method.isStatic())
-                replaceClassInMethod(newMethod, currClass, newClass, liveFields);                
+            if (methodName.startsWith("get_SAB")) {
+                // if (!method.isStatic())
+                replaceClassInMethodForGet(newMethod, currClass, newClass, liveFields);                
             }
 
             newMethod.setSource(null);
             newClass.addMethod(newMethod);
         }
-
-        // addGettersToClass(newClass);
 
         // registering in scene
         
@@ -203,90 +207,219 @@ public class ClassTransformer extends SceneTransformer {
 
     }
 
-    public static void addGettersToDerivedClass(SootClass currentClass, SootClass baseClass, Set<SootField> liveFields) {
-        // 
-        Set<SootField> allFields = getAllFields(baseClass);
-        Set<SootField> deadFields = new HashSet<>(allFields);
-        deadFields.removeAll(liveFields);
-        // find deadField getters which are part of baseClass
+    public void interfaceTypeFixer(SootClass interfaceClass) {
+        // Only process if it's actually an interface
+        if (!interfaceClass.isInterface()) return;
 
-        
-        // for all deadFields create a getter which returns default value
-        for (SootField field : deadFields) {
+        List<SootMethod> methodSnapshot = new ArrayList<>(interfaceClass.getMethods());
+
+        for (SootMethod method : methodSnapshot) {
             
+            // 1. Transform Return Type
+            Type oldRetType = method.getReturnType();
+            Type newRetType = getMappedType(oldRetType);
+            if (!oldRetType.equals(newRetType)) {
+                method.setReturnType(newRetType);
+            }
+
+            // 2. Transform Parameter Types
+            List<Type> oldParams = method.getParameterTypes();
+            List<Type> newParams = new ArrayList<>();
+            boolean paramChanged = false;
+
+            for (Type paramType : oldParams) {
+                Type transformed = getMappedType(paramType);
+                newParams.add(transformed);
+                if (!transformed.equals(paramType)) {
+                    paramChanged = true;
+                }
+            }
+
+            if (paramChanged) {
+                method.setParameterTypes(newParams);
+            }
         }
+    }
+
+    /**
+     * Helper to decide if a type needs mapping to an interface or a new array base.
+     */
+    private Type getMappedType(Type t) {
+        if (t instanceof RefType) {
+            SootClass originalClass = ((RefType) t).getSootClass();
+            SootClass interfaceMapped = classInterfaceMapping.get(originalClass);
+            // Return the interface type if found, otherwise the original (e.g., Object, String)
+            return (interfaceMapped != null) ? interfaceMapped.getType() : t;
+        } 
+        else if (t instanceof ArrayType) {
+            // Uses your existing logic to swap the base class inside the array
+            return replaceBaseClassInArray(t);
+        }
+        return t;
     }
 
     public static void addGettersToClass(SootClass sc) {
-    // Get all fields from the hierarchy
-    List<SootField> fields = new ArrayList<>(getAllFields(sc));
+        // Get all fields from the hierarchy
+        List<SootField> fields = new ArrayList<>(getAllFields(sc));
 
-    for (SootField field : fields) {
+        for (SootField field : fields) {
 
-        // find appropriate class containing the given SootField
-        SootClass owner = field.getDeclaringClass();
+            // find appropriate class containing the given SootField
+            SootClass owner = field.getDeclaringClass();
 
-        // 1. Define Method Metadata
-        String methodName = "get_SAB_" + owner.getShortName() + field.getName();
-        Type returnType = field.getType();
-        int modifiers = Modifier.PUBLIC;
-        if (field.isStatic()) {
-            modifiers |= Modifier.STATIC;
-        }
-
-        SootMethod getter = new SootMethod(methodName, new ArrayList<>(), returnType, modifiers);
-        JimpleBody body = Jimple.v().newBody(getter);
-        getter.setActiveBody(body);
-        getter.setSource(null);
-
-        // 2. Setup 'this' (only for instance fields)
-        Local thisLocal = null;
-        if (!field.isStatic()) {
-            thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
-            body.getLocals().add(thisLocal);
-            body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, 
-                Jimple.v().newThisRef(sc.getType())));
-        }
-
-        // 3. Create Local for the return value
-        Local retLocal = Jimple.v().newLocal("retVal", returnType);
-        body.getLocals().add(retLocal);
-
-        // 4. Generate Field Access
-        Value fieldRef;
-        if (field.isStatic()) {
-            fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
-        } else {
-            // Logic for inheritance: Check if field is from a parent
-            
-            if (owner.equals(sc)) {
-                // Field is part of the class itself
-                fieldRef = Jimple.v().newInstanceFieldRef(thisLocal, field.makeRef());
-            } else {
-                // Field is derived from a parent - apply type cast
-                // Create a local variable of the parent's type
-
-                Local parentLocal = Jimple.v().newLocal("parentThis", owner.getType());
-                body.getLocals().add(parentLocal);
-                
-                // parentThis = (ParentClass) this
-                CastExpr cast = Jimple.v().newCastExpr(thisLocal, owner.getType());
-                body.getUnits().add(Jimple.v().newAssignStmt(parentLocal, cast));
-                
-                // fieldRef = parentThis.field
-                fieldRef = Jimple.v().newInstanceFieldRef(parentLocal, field.makeRef());
+            // 1. Define Method Metadata
+            String methodName = "get_SAB_" + owner.getShortName() + field.getName();
+            Type returnType = field.getType();
+            int modifiers = Modifier.PUBLIC;
+            if (field.isStatic()) {
+                modifiers |= Modifier.STATIC;
             }
+
+            SootMethod getter = new SootMethod(methodName, new ArrayList<>(), returnType, modifiers);
+            JimpleBody body = Jimple.v().newBody(getter);
+            getter.setActiveBody(body);
+            getter.setSource(null);
+
+            // 2. Setup 'this' (only for instance fields)
+            Local thisLocal = null;
+            if (!field.isStatic()) {
+                thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
+                body.getLocals().add(thisLocal);
+                body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, 
+                    Jimple.v().newThisRef(sc.getType())));
+            }
+
+            // 3. Create Local for the return value
+            Local retLocal = Jimple.v().newLocal("retVal", returnType);
+            body.getLocals().add(retLocal);
+
+            // 4. Generate Field Access
+            Value fieldRef;
+            if (field.isStatic()) {
+                fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+            } else {
+                // Logic for inheritance: Check if field is from a parent
+                
+                if (owner.equals(sc)) {
+                    // Field is part of the class itself
+                    fieldRef = Jimple.v().newInstanceFieldRef(thisLocal, field.makeRef());
+                } else {
+                    // Field is derived from a parent - apply type cast
+                    // Create a local variable of the parent's type
+
+                    Local parentLocal = Jimple.v().newLocal("parentThis", owner.getType());
+                    body.getLocals().add(parentLocal);
+                    
+                    // parentThis = (ParentClass) this
+                    CastExpr cast = Jimple.v().newCastExpr(thisLocal, owner.getType());
+                    body.getUnits().add(Jimple.v().newAssignStmt(parentLocal, cast));
+                    
+                    // fieldRef = parentThis.field
+                    fieldRef = Jimple.v().newInstanceFieldRef(parentLocal, field.makeRef());
+                }
+            }
+
+            // 5. Assign and Return
+            body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
+            body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
+
+            // 6. Add to class
+            sc.addMethod(getter);
         }
-
-        // 5. Assign and Return
-        body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
-        body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
-
-        // 6. Add to class
-        sc.addMethod(getter);
     }
-}
     
+    public static void addSettersToClass(SootClass sc) {
+        List<SootField> fields = new ArrayList<>(getAllFields(sc));
+
+        for (SootField field : fields) {
+            SootClass owner = field.getDeclaringClass();
+            Type fieldType = field.getType();
+            String methodName = "set_SAB_" + owner.getShortName() + field.getName();
+
+            List<Type> parameterTypes = new ArrayList<>();
+            boolean isArray = fieldType instanceof ArrayType;
+
+            // 1. Determine Parameters
+            if (isArray) {
+                // For arrays: set_SAB_Field(int index, BaseType value)
+                parameterTypes.add(IntType.v());
+                parameterTypes.add(((ArrayType) fieldType).getElementType());
+            } else {
+                // For standard: set_SAB_Field(FieldType value)
+                parameterTypes.add(fieldType);
+            }
+
+            SootMethod setter = new SootMethod(methodName, parameterTypes, VoidType.v(), Modifier.PUBLIC);
+            if (field.isStatic()) setter.setModifiers(setter.getModifiers() | Modifier.STATIC);
+            
+            JimpleBody body = Jimple.v().newBody(setter);
+            setter.setActiveBody(body);
+
+            // 2. Identity: 'this'
+            Local thisLocal = null;
+            if (!field.isStatic()) {
+                thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
+                body.getLocals().add(thisLocal);
+                body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sc.getType())));
+            }
+
+            // 3. Identity: Parameters
+            Local indexLocal = null;
+            Local valueLocal = null;
+
+            if (isArray) {
+                // param0 = index
+                indexLocal = Jimple.v().newLocal("idx", IntType.v());
+                body.getLocals().add(indexLocal);
+                body.getUnits().add(Jimple.v().newIdentityStmt(indexLocal, Jimple.v().newParameterRef(IntType.v(), 0)));
+
+                // param1 = value to insert
+                Type elementType = ((ArrayType) fieldType).getElementType();
+                valueLocal = Jimple.v().newLocal("val", elementType);
+                body.getLocals().add(valueLocal);
+                body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(elementType, 1)));
+            } else {
+                // param0 = value to set
+                valueLocal = Jimple.v().newLocal("val", fieldType);
+                body.getLocals().add(valueLocal);
+                body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(fieldType, 0)));
+            }
+
+            // 4. Field Access Logic (same inheritance/cast logic as your getter)
+            Value fieldRef;
+            if (field.isStatic()) {
+                fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+            } else {
+                Local baseLocal = thisLocal;
+                if (!owner.equals(sc)) {
+                    baseLocal = Jimple.v().newLocal("parentThis", owner.getType());
+                    body.getLocals().add(baseLocal);
+                    body.getUnits().add(Jimple.v().newAssignStmt(baseLocal, Jimple.v().newCastExpr(thisLocal, owner.getType())));
+                }
+                fieldRef = Jimple.v().newInstanceFieldRef(baseLocal, field.makeRef());
+            }
+
+            // 5. Assignment Logic
+            if (isArray) {
+                // We need a local to hold the array reference before accessing the index
+                Local arrayLocal = Jimple.v().newLocal("tempArray", fieldType);
+                body.getLocals().add(arrayLocal);
+                body.getUnits().add(Jimple.v().newAssignStmt(arrayLocal, fieldRef));
+
+                // Generate: tempArray[idx] = val
+                ArrayRef arrayRef = Jimple.v().newArrayRef(arrayLocal, indexLocal);
+                body.getUnits().add(Jimple.v().newAssignStmt(arrayRef, valueLocal));
+            } else {
+                // Generate: field = val
+                body.getUnits().add(Jimple.v().newAssignStmt(fieldRef, valueLocal));
+            }
+
+            body.getUnits().add(Jimple.v().newReturnVoidStmt());
+            sc.addMethod(setter);
+        }
+    }
+
+
     public SootClass createInterfaceFromClass(SootClass originalClass) {
         // check if already exists
         if (classInterfaceMapping.get(originalClass) != null) {
@@ -350,7 +483,7 @@ public class ClassTransformer extends SceneTransformer {
     }
 
 
-    public static void replaceClassInMethod(SootMethod method, SootClass baseClass, SootClass currClass, Set<SootField> liveFields) {
+    public static void replaceClassInMethodForGet(SootMethod method, SootClass baseClass, SootClass currClass, Set<SootField> liveFields) {
         if (!method.hasActiveBody()) return;
 
         Body body = method.getActiveBody();
@@ -431,7 +564,6 @@ public class ClassTransformer extends SceneTransformer {
             if (unit instanceof IdentityStmt) {
                 IdentityStmt is = (IdentityStmt) unit;
                 if (is.getRightOp() instanceof ThisRef) {
-                    ThisRef tr = (ThisRef) is.getRightOp();
                     is.setRightOp(Jimple.v().newThisRef((RefType) currClassType));
                 } else if (is.getRightOp() instanceof ParameterRef) {
                     ParameterRef pr = (ParameterRef) is.getRightOp();
@@ -463,6 +595,12 @@ public class ClassTransformer extends SceneTransformer {
                 if (val instanceof FieldRef) {
                     FieldRef fr = (FieldRef) val;
                     Type fieldRefType = fr.getFieldRef().type();
+                    SootClass fieldRefClass = currClass;
+                    if (parentClass != null)
+                        fieldRefClass = parentClass;
+                    if (fr.getFieldRef().isStatic()) {
+                        fieldRefClass = fr.getField().getDeclaringClass();
+                    }
                     if (fieldRefType instanceof RefType) {
                         SootClass fieldType = ((RefType) fieldRefType).getSootClass();
                         fieldType = classInterfaceMapping.get(fieldType);
@@ -472,7 +610,7 @@ public class ClassTransformer extends SceneTransformer {
                         fieldRefType = replaceBaseClassInArray(fieldRefType);
                     }
                     fr.setFieldRef(Scene.v().makeFieldRef(
-                        currClass,
+                        fieldRefClass,
                         fr.getFieldRef().name(),
                         fieldRefType,
                         fr.getFieldRef().isStatic()
@@ -494,6 +632,10 @@ public class ClassTransformer extends SceneTransformer {
 
             // 3. If the base class matches the one we want to replace
             SootClass interfaceClass = classInterfaceMapping.get(currentBaseClass);
+            // if (interfaceClass == null) {
+            //     System.out.println("currentBaseClass went wrong replaceBaseClassInArray: " + currentBaseClass);
+            // }
+            if (interfaceClass != null)
             return ArrayType.v(interfaceClass.getType(), at.numDimensions);
         }
     }
@@ -629,7 +771,7 @@ public class ClassTransformer extends SceneTransformer {
 
         // 1. Handle 'this' for non-static methods
         if (!newMethod.isStatic()) {
-            Local thisLocal = Jimple.v().newLocal("this", sourceMethod.getDeclaringClass().getType());
+            Local thisLocal = Jimple.v().newLocal("thisLocal", sourceMethod.getDeclaringClass().getType());
             body.getLocals().add(thisLocal);
             body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sourceMethod.getDeclaringClass().getType())));
         }
