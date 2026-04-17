@@ -12,7 +12,7 @@ class B extends A {
 }
 class C extends B {
     public int f3;
-    public int f4;
+    public C f4;
     public int f5;
     public int f6;
     public int f7;
@@ -23,7 +23,7 @@ class C extends B {
         this.f3 = 156;
     }
 }
-public class Test3 {
+public class Test {
     public static void main(String[] args) {
         C obj = new C();
         obj.set_f2();
@@ -31,7 +31,7 @@ public class Test3 {
         obj2.set_f1();
         obj2.set_f2();
         obj2.set_f3();
-        obj2.f4 = 2;
+        obj2.f4 = obj2;
         obj2.f5 = 2;
         obj2.f6 = 2;
         obj2.f7 = 2;
@@ -39,7 +39,7 @@ public class Test3 {
         obj3.set_f1();
         obj3.set_f2();
         obj3.set_f3();
-        obj3.f4 = 2;
+        obj3.f4 = obj3;
         obj3.f5 = 2;
         obj3.f6 = 2;
         obj3.f7 = 2;

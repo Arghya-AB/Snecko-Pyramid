@@ -23,6 +23,13 @@ public class ClassTransformer extends SceneTransformer {
         //     System.out.println("Object " + entry.getKey() + " has live fields: " + entry.getValue());
         // }
 
+
+
+        // add default getters and setters for all classes to all classes 
+        for (SootClass sc: Scene.v().getApplicationClasses()) {
+            addGettersToClass(sc);
+        }
+
         // creating classes for all AllocObjects
         // create SootClass, Set<SootField> pairs to prevent redundancy
         Set<ClassFieldGroup> workSet = new HashSet<>();
@@ -68,7 +75,7 @@ public class ClassTransformer extends SceneTransformer {
         // create class
         String newClassName = currClass.getName();
         if (liveFields.size() == 0) {
-            newClassName = newClassName + "_<empty>" ;
+            newClassName = newClassName + "_SAB_empty" ;
         }
         for (SootField field : liveFields) {
             newClassName = newClassName + "_" + field.getName();
@@ -102,8 +109,14 @@ public class ClassTransformer extends SceneTransformer {
             }
         }
 
+
         // clone method
         for (SootMethod method : currClass.getMethods()) {
+            // if method is a getter / setter then skip
+            String methodName = method.getName();
+            if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
+                continue;
+            }
 
             // check if method is a constructor, if a constructor then, change super call.
             
@@ -142,6 +155,8 @@ public class ClassTransformer extends SceneTransformer {
             newClass.addMethod(newMethod);
         }
 
+        addGettersToClass(newClass);
+
         // registering in scene
         
         Scene.v().addClass(newClass);
@@ -162,6 +177,72 @@ public class ClassTransformer extends SceneTransformer {
         // add to mapping
         mapping.put(new ClassFieldGroup(currClass, liveFields), newClass);
 
+    }
+
+    public static void addGettersToDerivedClass(SootClass currentClass, SootClass baseClass, Set<SootField> liveFields) {
+        // 
+        Set<SootField> allFields = getAllFields(baseClass);
+        Set<SootField> deadFields = new HashSet<>(allFields);
+        deadFields.removeAll(liveFields);
+        // find deadField getters which are part of baseClass
+        
+        
+        // for all deadFields create a getter which returns default value
+        for (SootField field : deadFields) {
+            
+        }
+    }
+
+    public static void addGettersToClass(SootClass sc) {
+        // We use a copy of the field list to avoid ConcurrentModificationException 
+        // if we were adding fields (though here we are only reading them).
+        List<SootField> fields = new ArrayList<>(getAllFields(sc));
+
+        for (SootField field : fields) {
+            // 1. Define Method Metadata
+            String methodName = "get_SAB_" + sc.getShortName() + field.getName();
+            Type returnType = field.getType();
+            List<Type> parameterTypes = Collections.emptyList();
+            int modifiers = Modifier.PUBLIC;
+
+            // 2. Create the SootMethod
+            SootMethod getter = new SootMethod(methodName, parameterTypes, returnType, modifiers);
+            
+            // 3. Create the JimpleBody
+            JimpleBody body = Jimple.v().newBody(getter);
+            getter.setActiveBody(body);
+            getter.setSource(null); // Mark as synthetic
+
+            // 4. Identity Statement for 'this' (Required for Instance Field Access)
+            Local thisLocal = Jimple.v().newLocal("this", sc.getType());
+            body.getLocals().add(thisLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(
+                thisLocal, 
+                Jimple.v().newThisRef(sc.getType())
+            ));
+
+            // 5. Create Local for the return value
+            Local retLocal = Jimple.v().newLocal("retVal", returnType);
+            body.getLocals().add(retLocal);
+
+            // 6. Generate the field access: retVal = this.field
+            // Note: Use newStaticFieldRef(field.makeRef()) if the field is static
+            Value fieldRef;
+            if (field.isStatic()) {
+                fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+            }
+            else {
+                fieldRef = Jimple.v().newInstanceFieldRef(thisLocal, field.makeRef());
+            }
+
+            body.getUnits().add(Jimple.v().newAssignStmt(retLocal, fieldRef));
+
+            // 7. Return the value
+            body.getUnits().add(Jimple.v().newReturnStmt(retLocal));
+
+            // 8. Add the method to the class
+            sc.addMethod(getter);
+        }
     }
 
     public static void transformConstructor(SootMethod constructor, SootClass newSuperClass, SootClass oldSuperClass) {
