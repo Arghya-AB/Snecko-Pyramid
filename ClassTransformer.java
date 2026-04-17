@@ -38,6 +38,11 @@ public class ClassTransformer extends SceneTransformer {
             createInterfaceFromClass(sc);
         } 
 
+        // change all instances of classes to class interface in application classes
+
+        // change all instances of classes to class interface in interfaces
+
+
         // creating classes for all AllocObjects
         // create SootClass, Set<SootField> pairs to prevent redundancy
         Set<ClassFieldGroup> workSet = new HashSet<>();
@@ -120,7 +125,6 @@ public class ClassTransformer extends SceneTransformer {
             }
         }
 
-
         // clone method
         for (SootMethod method : currClass.getMethods()) {
             // if method is a getter / setter then skip
@@ -139,7 +143,7 @@ public class ClassTransformer extends SceneTransformer {
                 SootMethod newMethod = createDefaultMethod(method);
                 if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
                     if (!method.isStatic())
-                    replaceClassInMethod(newMethod, currClass, newClass);                
+                    replaceClassInMethod(newMethod, currClass, newClass, liveFields);                
                 }
                 newMethod.setSource(null);
                 newClass.addMethod(newMethod);
@@ -168,7 +172,7 @@ public class ClassTransformer extends SceneTransformer {
 
             if (methodName.startsWith("get_SAB") || methodName.startsWith("set_SAB")) {
                 if (!method.isStatic())
-                replaceClassInMethod(newMethod, currClass, newClass);                
+                replaceClassInMethod(newMethod, currClass, newClass, liveFields);                
             }
 
             newMethod.setSource(null);
@@ -345,19 +349,80 @@ public class ClassTransformer extends SceneTransformer {
         return newInterface;
     }
 
-    public static void replaceClassInMethod(SootMethod method, SootClass oldClass, SootClass newClass) {
+
+    public static void replaceClassInMethod(SootMethod method, SootClass baseClass, SootClass currClass, Set<SootField> liveFields) {
         if (!method.hasActiveBody()) return;
 
         Body body = method.getActiveBody();
-        RefType oldType = oldClass.getType();
-        RefType newType = newClass.getType();
+
+        Type returnType = method.getReturnType();
+
+        // changing return type of method to interface if needed
+        if (!(returnType instanceof PrimType)) {
+            if (returnType instanceof RefType){
+                SootClass returnClass = ((RefType) returnType).getSootClass();
+                returnClass = classInterfaceMapping.get(returnClass);
+                // setting returntype of method
+                returnType = returnClass.getType();
+            }
+            else if (returnType instanceof ArrayType) {
+                returnType = replaceBaseClassInArray((ArrayType) returnType);
+            }
+            method.setReturnType(returnType);
+        }
+        
+        // Type currClassType = mapping.get(new ClassFieldGroup(currClass, liveFields)).getType();
+        Type currClassType = currClass.getType();
+
+        // find appropriate parent class for currClass
+        SootClass parentClass = null;
+        for (Local local : body.getLocals()) {
+            if (local.getName().equals("parentThis")) {
+                System.out.println("found parentThis");
+                parentClass = ((RefType) local.getType()).getSootClass();
+                parentClass = mapping.get(new ClassFieldGroup(parentClass, liveFields));
+                if (parentClass == null) {
+                    System.out.println("CLASS " + ((RefType) local.getType()).getSootClass().getName() + "MISSING");
+                }
+            }
+        }
+        
+        Type parentType;
+        if (parentClass != null)
+            parentType = parentClass.getType();
+        else
+            parentType = null;
 
         // 1. Update Local Variable Types (Handles the "B this;" declaration)
         for (Local local : body.getLocals()) {
-            if (local.getType().equals(oldType)) {
-                local.setType(newType);
+            if (local.getName().equals("retVal")) {
+               if (!(returnType instanceof PrimType)) {
+                    local.setType(returnType);
+                }
+            }
+            else if (local.getName().equals("parentThis")) {
+                local.setType(parentType);
+            }
+            else if (local.getName().equals("thisLocal")) {
+                local.setType(currClassType);
             }
         }
+
+        // update parameter types
+        List<Type> params = new ArrayList<>(method.getParameterTypes());
+        for (int i = 0; i < params.size(); i++) {
+            Type param = params.get(i);
+            if (param instanceof RefType) {
+                SootClass paramClass = ((RefType) param).getSootClass();
+                paramClass = classInterfaceMapping.get(paramClass);
+                params.set(i, paramClass.getType());
+            }
+            else if (param instanceof ArrayType) {
+                params.set(i, replaceBaseClassInArray(param));
+            }
+        }
+
+        method.setParameterTypes(params);
 
         // 2. Update the Units (Instructions)
         for (Unit unit : body.getUnits()) {
@@ -367,14 +432,19 @@ public class ClassTransformer extends SceneTransformer {
                 IdentityStmt is = (IdentityStmt) unit;
                 if (is.getRightOp() instanceof ThisRef) {
                     ThisRef tr = (ThisRef) is.getRightOp();
-                    if (tr.getType().equals(oldType)) {
-                        is.setRightOp(Jimple.v().newThisRef(newType));
-                    }
+                    is.setRightOp(Jimple.v().newThisRef((RefType) currClassType));
                 } else if (is.getRightOp() instanceof ParameterRef) {
                     ParameterRef pr = (ParameterRef) is.getRightOp();
-                    if (pr.getType().equals(oldType)) {
-                        is.setRightOp(Jimple.v().newParameterRef(newType, pr.getIndex()));
+                    Type param = pr.getType();
+                    if (param instanceof RefType) {
+                        SootClass paramClass = ((RefType) param).getSootClass();
+                        paramClass = classInterfaceMapping.get(paramClass);
+                        param = paramClass.getType();
                     }
+                    else if (param instanceof ArrayType) {
+                        param = replaceBaseClassInArray(param);
+                    }
+                    is.setRightOp(Jimple.v().newParameterRef(param, pr.getIndex()));
                 }
             }
 
@@ -386,27 +456,52 @@ public class ClassTransformer extends SceneTransformer {
                 // But if the cast itself is TO the old class: (B) x -> (NewClass) x
                 if (val instanceof CastExpr) {
                     CastExpr cast = (CastExpr) val;
-                    if (cast.getCastType().equals(oldType)) {
-                        cast.setCastType(newType);
-                    }
+                    cast.setCastType(parentType);
                 }
 
                 // Handle Field References: <B: int f2> -> <NewClass: int f2>
                 if (val instanceof FieldRef) {
                     FieldRef fr = (FieldRef) val;
-                    if (fr.getFieldRef().declaringClass().equals(oldClass)) {
-                        fr.setFieldRef(Scene.v().makeFieldRef(
-                            newClass,
-                            fr.getFieldRef().name(),
-                            fr.getFieldRef().type(),
-                            fr.getFieldRef().isStatic()
-                        ));
+                    Type fieldRefType = fr.getFieldRef().type();
+                    if (fieldRefType instanceof RefType) {
+                        SootClass fieldType = ((RefType) fieldRefType).getSootClass();
+                        fieldType = classInterfaceMapping.get(fieldType);
+                        fieldRefType = fieldType.getType();
                     }
+                    else if (fieldRefType instanceof ArrayType) {
+                        fieldRefType = replaceBaseClassInArray(fieldRefType);
+                    }
+                    fr.setFieldRef(Scene.v().makeFieldRef(
+                        currClass,
+                        fr.getFieldRef().name(),
+                        fieldRefType,
+                        fr.getFieldRef().isStatic()
+                    ));
                 }
                 
             }
         }
     }
+    
+    public static Type replaceBaseClassInArray(Type type) {
+    // 1. Check if it is an ArrayType
+    if (type instanceof ArrayType) {
+        ArrayType at = (ArrayType) type;
+
+        // 2. Check if the base of the array is a RefType (an object class)
+        if (at.baseType instanceof RefType) {
+            SootClass currentBaseClass = ((RefType) at.baseType).getSootClass();
+
+            // 3. If the base class matches the one we want to replace
+            SootClass interfaceClass = classInterfaceMapping.get(currentBaseClass);
+            return ArrayType.v(interfaceClass.getType(), at.numDimensions);
+        }
+    }
+    
+    // Return original type if it wasn't an array of oldClass
+    return type;
+}
+    
     // public static void addGettersToClass(SootClass sc) {
     //     // We use a copy of the field list to avoid ConcurrentModificationException 
     //     // if we were adding fields (though here we are only reading them).

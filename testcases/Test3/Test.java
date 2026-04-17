@@ -15,7 +15,7 @@ class B extends A {
 class C extends B {
     public int f3;
     public C f4;
-    public int f5;
+    public C[] f5;
     public int f6;
     public int f7;
     public void set_f3() {
@@ -34,7 +34,7 @@ public class Test {
         obj2.test_f2();
         obj2.set_f3();
         obj2.f4 = obj2;
-        obj2.f5 = 2;
+        obj2.f5 = new C[5];
         obj2.f6 = 2;
         obj2.f7 = 2;
         C obj3 = new C();
@@ -42,7 +42,7 @@ public class Test {
         obj3.test_f2();
         obj3.set_f3();
         obj3.f4 = obj3;
-        obj3.f5 = 2;
+        obj3.f5 = new C[10];
         obj3.f6 = 2;
         obj3.f7 = 2;
     }
