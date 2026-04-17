@@ -469,7 +469,20 @@ public class SampleSceneTransform extends SceneTransformer {
         }
 
         if (right instanceof NewExpr) {
+            // library class objects
+            Type type = ((NewExpr) right).getBaseType();
+            if (type instanceof RefType) {
+                SootClass allocClass = ((RefType) type).getSootClass();
+                if (!allocClass.isApplicationClass()) {
+                    return;
+                }
+            }
             handleNewOrConst(left, right, line, out, method, false);
+            return;
+        }
+
+        // array allocations
+        if (right instanceof NewArrayExpr || right instanceof NewMultiArrayExpr) {
             return;
         }
 
