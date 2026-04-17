@@ -334,90 +334,190 @@ public class ClassTransformer extends SceneTransformer {
         for (SootField field : fields) {
             SootClass owner = field.getDeclaringClass();
             Type fieldType = field.getType();
-            String methodName = "set_SAB_" + owner.getShortName() + field.getName();
-
-            List<Type> parameterTypes = new ArrayList<>();
             boolean isArray = fieldType instanceof ArrayType;
 
-            // 1. Determine Parameters
+            // --- 1. Generate the standard setter (Indexed for arrays, direct for others) ---
+            String standardMethodName = "set_SAB_" + owner.getShortName() + field.getName();
+            createAndAddSetter(sc, field, standardMethodName, false);
+
+            // --- 2. Generate the "Whole Array" setter if it's an array ---
             if (isArray) {
-                // For arrays: set_SAB_Field(int index, BaseType value)
-                parameterTypes.add(IntType.v());
-                parameterTypes.add(((ArrayType) fieldType).getElementType());
-            } else {
-                // For standard: set_SAB_Field(FieldType value)
-                parameterTypes.add(fieldType);
+                String arrayMethodName = "set_SAB_Array_" + owner.getShortName() + field.getName();
+                createAndAddSetter(sc, field, arrayMethodName, true);
             }
-
-            SootMethod setter = new SootMethod(methodName, parameterTypes, VoidType.v(), Modifier.PUBLIC);
-            if (field.isStatic()) setter.setModifiers(setter.getModifiers() | Modifier.STATIC);
-            
-            JimpleBody body = Jimple.v().newBody(setter);
-            setter.setActiveBody(body);
-
-            // 2. Identity: 'this'
-            Local thisLocal = null;
-            if (!field.isStatic()) {
-                thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
-                body.getLocals().add(thisLocal);
-                body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sc.getType())));
-            }
-
-            // 3. Identity: Parameters
-            Local indexLocal = null;
-            Local valueLocal = null;
-
-            if (isArray) {
-                // param0 = index
-                indexLocal = Jimple.v().newLocal("idx", IntType.v());
-                body.getLocals().add(indexLocal);
-                body.getUnits().add(Jimple.v().newIdentityStmt(indexLocal, Jimple.v().newParameterRef(IntType.v(), 0)));
-
-                // param1 = value to insert
-                Type elementType = ((ArrayType) fieldType).getElementType();
-                valueLocal = Jimple.v().newLocal("val", elementType);
-                body.getLocals().add(valueLocal);
-                body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(elementType, 1)));
-            } else {
-                // param0 = value to set
-                valueLocal = Jimple.v().newLocal("val", fieldType);
-                body.getLocals().add(valueLocal);
-                body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(fieldType, 0)));
-            }
-
-            // 4. Field Access Logic (same inheritance/cast logic as your getter)
-            Value fieldRef;
-            if (field.isStatic()) {
-                fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
-            } else {
-                Local baseLocal = thisLocal;
-                if (!owner.equals(sc)) {
-                    baseLocal = Jimple.v().newLocal("parentThis", owner.getType());
-                    body.getLocals().add(baseLocal);
-                    body.getUnits().add(Jimple.v().newAssignStmt(baseLocal, Jimple.v().newCastExpr(thisLocal, owner.getType())));
-                }
-                fieldRef = Jimple.v().newInstanceFieldRef(baseLocal, field.makeRef());
-            }
-
-            // 5. Assignment Logic
-            if (isArray) {
-                // We need a local to hold the array reference before accessing the index
-                Local arrayLocal = Jimple.v().newLocal("tempArray", fieldType);
-                body.getLocals().add(arrayLocal);
-                body.getUnits().add(Jimple.v().newAssignStmt(arrayLocal, fieldRef));
-
-                // Generate: tempArray[idx] = val
-                ArrayRef arrayRef = Jimple.v().newArrayRef(arrayLocal, indexLocal);
-                body.getUnits().add(Jimple.v().newAssignStmt(arrayRef, valueLocal));
-            } else {
-                // Generate: field = val
-                body.getUnits().add(Jimple.v().newAssignStmt(fieldRef, valueLocal));
-            }
-
-            body.getUnits().add(Jimple.v().newReturnVoidStmt());
-            sc.addMethod(setter);
         }
     }
+
+    private static void createAndAddSetter(SootClass sc, SootField field, String methodName, boolean isWholeArraySetter) {
+        SootClass owner = field.getDeclaringClass();
+        Type fieldType = field.getType();
+        boolean isArrayField = fieldType instanceof ArrayType;
+
+        // 1. Determine Parameter Types
+        List<Type> parameterTypes = new ArrayList<>();
+        if (isArrayField && !isWholeArraySetter) {
+            // Indexed setter: (int, BaseType)
+            parameterTypes.add(IntType.v());
+            parameterTypes.add(((ArrayType) fieldType).getElementType());
+        } else {
+            // Standard setter OR Whole Array setter: (FieldType)
+            parameterTypes.add(fieldType);
+        }
+
+        int modifiers = Modifier.PUBLIC;
+        if (field.isStatic()) modifiers |= Modifier.STATIC;
+
+        SootMethod setter = new SootMethod(methodName, parameterTypes, VoidType.v(), modifiers);
+        JimpleBody body = Jimple.v().newBody(setter);
+        setter.setActiveBody(body);
+
+        // 2. Identity: 'this'
+        Local thisLocal = null;
+        if (!field.isStatic()) {
+            thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
+            body.getLocals().add(thisLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sc.getType())));
+        }
+
+        // 3. Identity: Parameters
+        Local valueLocal;
+        Local indexLocal = null;
+
+        if (isArrayField && !isWholeArraySetter) {
+            indexLocal = Jimple.v().newLocal("idx", IntType.v());
+            body.getLocals().add(indexLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(indexLocal, Jimple.v().newParameterRef(IntType.v(), 0)));
+
+            Type elementType = ((ArrayType) fieldType).getElementType();
+            valueLocal = Jimple.v().newLocal("val", elementType);
+            body.getLocals().add(valueLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(elementType, 1)));
+        } else {
+            valueLocal = Jimple.v().newLocal("newVal", fieldType);
+            body.getLocals().add(valueLocal);
+            body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(fieldType, 0)));
+        }
+
+        // 4. Field Access (Handles inheritance casting)
+        Value fieldRef;
+        if (field.isStatic()) {
+            fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+        } else {
+            Local baseLocal = thisLocal;
+            if (!owner.equals(sc)) {
+                baseLocal = Jimple.v().newLocal("parentThis", owner.getType());
+                body.getLocals().add(baseLocal);
+                body.getUnits().add(Jimple.v().newAssignStmt(baseLocal, Jimple.v().newCastExpr(thisLocal, owner.getType())));
+            }
+            fieldRef = Jimple.v().newInstanceFieldRef(baseLocal, field.makeRef());
+        }
+
+        // 5. Assignment Logic
+        if (isArrayField && !isWholeArraySetter) {
+            // tempArray = this.field; tempArray[idx] = val;
+            Local arrayLocal = Jimple.v().newLocal("tempArray", fieldType);
+            body.getLocals().add(arrayLocal);
+            body.getUnits().add(Jimple.v().newAssignStmt(arrayLocal, fieldRef));
+            body.getUnits().add(Jimple.v().newAssignStmt(Jimple.v().newArrayRef(arrayLocal, indexLocal), valueLocal));
+        } else {
+            // this.field = newVal; (Works for both standard fields and whole array replacement)
+            body.getUnits().add(Jimple.v().newAssignStmt(fieldRef, valueLocal));
+        }
+
+        body.getUnits().add(Jimple.v().newReturnVoidStmt());
+        sc.addMethod(setter);
+    }
+
+    // public static void addSettersToClass(SootClass sc) {
+    //     List<SootField> fields = new ArrayList<>(getAllFields(sc));
+
+    //     for (SootField field : fields) {
+    //         SootClass owner = field.getDeclaringClass();
+    //         Type fieldType = field.getType();
+    //         String methodName = "set_SAB_" + owner.getShortName() + field.getName();
+
+    //         List<Type> parameterTypes = new ArrayList<>();
+    //         boolean isArray = fieldType instanceof ArrayType;
+
+    //         // 1. Determine Parameters
+    //         if (isArray) {
+    //             // For arrays: set_SAB_Field(int index, BaseType value)
+    //             parameterTypes.add(IntType.v());
+    //             parameterTypes.add(((ArrayType) fieldType).getElementType());
+    //         } else {
+    //             // For standard: set_SAB_Field(FieldType value)
+    //             parameterTypes.add(fieldType);
+    //         }
+
+    //         SootMethod setter = new SootMethod(methodName, parameterTypes, VoidType.v(), Modifier.PUBLIC);
+    //         if (field.isStatic()) setter.setModifiers(setter.getModifiers() | Modifier.STATIC);
+            
+    //         JimpleBody body = Jimple.v().newBody(setter);
+    //         setter.setActiveBody(body);
+
+    //         // 2. Identity: 'this'
+    //         Local thisLocal = null;
+    //         if (!field.isStatic()) {
+    //             thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
+    //             body.getLocals().add(thisLocal);
+    //             body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, Jimple.v().newThisRef(sc.getType())));
+    //         }
+
+    //         // 3. Identity: Parameters
+    //         Local indexLocal = null;
+    //         Local valueLocal = null;
+
+    //         if (isArray) {
+    //             // param0 = index
+    //             indexLocal = Jimple.v().newLocal("idx", IntType.v());
+    //             body.getLocals().add(indexLocal);
+    //             body.getUnits().add(Jimple.v().newIdentityStmt(indexLocal, Jimple.v().newParameterRef(IntType.v(), 0)));
+
+    //             // param1 = value to insert
+    //             Type elementType = ((ArrayType) fieldType).getElementType();
+    //             valueLocal = Jimple.v().newLocal("val", elementType);
+    //             body.getLocals().add(valueLocal);
+    //             body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(elementType, 1)));
+    //         } else {
+    //             // param0 = value to set
+    //             valueLocal = Jimple.v().newLocal("val", fieldType);
+    //             body.getLocals().add(valueLocal);
+    //             body.getUnits().add(Jimple.v().newIdentityStmt(valueLocal, Jimple.v().newParameterRef(fieldType, 0)));
+    //         }
+
+    //         // 4. Field Access Logic (same inheritance/cast logic as your getter)
+    //         Value fieldRef;
+    //         if (field.isStatic()) {
+    //             fieldRef = Jimple.v().newStaticFieldRef(field.makeRef());
+    //         } else {
+    //             Local baseLocal = thisLocal;
+    //             if (!owner.equals(sc)) {
+    //                 baseLocal = Jimple.v().newLocal("parentThis", owner.getType());
+    //                 body.getLocals().add(baseLocal);
+    //                 body.getUnits().add(Jimple.v().newAssignStmt(baseLocal, Jimple.v().newCastExpr(thisLocal, owner.getType())));
+    //             }
+    //             fieldRef = Jimple.v().newInstanceFieldRef(baseLocal, field.makeRef());
+    //         }
+
+    //         // 5. Assignment Logic
+    //         if (isArray) {
+    //             // We need a local to hold the array reference before accessing the index
+    //             Local arrayLocal = Jimple.v().newLocal("tempArray", fieldType);
+    //             body.getLocals().add(arrayLocal);
+    //             body.getUnits().add(Jimple.v().newAssignStmt(arrayLocal, fieldRef));
+
+    //             // Generate: tempArray[idx] = val
+    //             ArrayRef arrayRef = Jimple.v().newArrayRef(arrayLocal, indexLocal);
+    //             body.getUnits().add(Jimple.v().newAssignStmt(arrayRef, valueLocal));
+    //         } else {
+    //             // Generate: field = val
+    //             body.getUnits().add(Jimple.v().newAssignStmt(fieldRef, valueLocal));
+    //         }
+
+    //         body.getUnits().add(Jimple.v().newReturnVoidStmt());
+    //         sc.addMethod(setter);
+    //     }
+    // }
 
 
     public SootClass createInterfaceFromClass(SootClass originalClass) {
