@@ -1,5 +1,5 @@
 SHELL:= /bin/bash
-FOLDER = Test1
+FOLDER = Test3
 
 all : clean compile run
 

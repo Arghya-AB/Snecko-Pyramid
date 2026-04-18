@@ -10,7 +10,7 @@ public class Main {
             "-cp", classPath, 
             "-pp", // sets the class path for Soot
             "-w",
-            "-f", "J",
+            "-f", "class",
             "-t", "1",
             "-main-class", "Test",	// specify the main class
             "-process-dir", classPath

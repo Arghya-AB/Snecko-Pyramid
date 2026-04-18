@@ -11,6 +11,7 @@ class AllocObject {
     private final boolean isPseudo;
     private final Set<String> callSites;
     private final SootClass stClass;
+    private final int relativeOffset;
 
     // AllocObject(int lineNumber, SootMethod originMethod) {
     // this(lineNumber, originMethod != null ? originMethod.getSignature() :
@@ -18,15 +19,24 @@ class AllocObject {
     // }
 
     AllocObject(int lineNumber, SootMethod originMethod, boolean isPseudo, SootClass stClass) {
-        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", isPseudo, stClass);
+        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", isPseudo, stClass, -1);
     }
 
     AllocObject(int lineNumber, String originMethodSignature, boolean isPseudo, SootClass stClass) {
+        this(lineNumber, originMethodSignature, isPseudo, stClass, -1);
+    }
+
+    AllocObject(int lineNumber, SootMethod originMethod, boolean isPseudo, SootClass stClass, int relativeOffset) {
+        this(lineNumber, originMethod != null ? originMethod.getSignature() : "UNIVERSE", isPseudo, stClass, relativeOffset);
+    }
+
+    AllocObject(int lineNumber, String originMethodSignature, boolean isPseudo, SootClass stClass, int relativeOffset) {
         this.lineNumber = lineNumber;
         this.originMethodSignature = originMethodSignature;
         this.isPseudo = isPseudo;
         this.callSites = new HashSet<>();
         this.stClass = stClass;
+        this.relativeOffset = relativeOffset;
     }
 
     SootClass getStClass() {
@@ -43,6 +53,10 @@ class AllocObject {
 
     String getOriginMethodSignature() {
         return originMethodSignature;
+    }
+
+    int getRelativeOffset() {
+        return relativeOffset;
     }
 
     Set<String> getCallSites() {
@@ -70,7 +84,7 @@ class AllocObject {
 
     @Override
     public String toString() {
-        return (isPseudo ? "P" : "O") + lineNumber + "@" + originMethodSignature;
+        return (isPseudo ? "P" : lineNumber) + "@" + originMethodSignature;
     }
 }
 
@@ -188,8 +202,8 @@ public class SampleSceneTransform extends SceneTransformer {
     private static final Set<AllocObject> allObjects = new HashSet<>();
     private static final Map<String, AllocObject> canonicalObjects = new HashMap<>();
     public static final Map<AllocObject, Set<SootField>> liveFields = new HashMap<>();
-    private final Map<Unit, Integer> unitIds = new IdentityHashMap<>();
-    private int nextUnitId = 1;
+    public static final Map<Unit, Integer> unitIds = new IdentityHashMap<>();
+    private static int nextUnitId = 1;
 
     @Override
     protected void internalTransform(String phaseName, Map<String, String> options) {
@@ -350,7 +364,7 @@ public class SampleSceneTransform extends SceneTransformer {
         }
     }
 
-    private int getLineNumber(Unit u) {
+    public int getLineNumber(Unit u) {
         Integer existing = unitIds.get(u);
         if (existing != null) {
             return existing;
@@ -358,6 +372,23 @@ public class SampleSceneTransform extends SceneTransformer {
         int assigned = nextUnitId++;
         unitIds.put(u, assigned);
         return assigned;
+    }
+
+    public int computeRelativeOffset(SootMethod method, int lineNumber) {
+        try {
+            Body body = method.retrieveActiveBody();
+            if (body == null) return -1;
+            int offset = 0;
+            for (Unit u : body.getUnits()) {
+                if (getLineNumber(u) == lineNumber) {
+                    return offset;
+                }
+                offset++;
+            }
+        } catch (RuntimeException e) {
+            return -1;
+        }
+        return -1;
     }
 
     private void initializeUnitIdsAcrossScene() {
@@ -517,6 +548,7 @@ public class SampleSceneTransform extends SceneTransformer {
         String allocSuffix = isPseudo ? " [" + right.toString() + "]" : "";
         String allocKey = (isPseudo ? "P" : "O") + line + "@" + method.getSignature() + allocSuffix;
         AllocObject obj = canonicalObjects.get(allocKey);
+        int relativeOffset = -1;
         if (obj == null) {
             SootClass allocClass = null;
             if (right instanceof NewExpr) {
@@ -524,6 +556,7 @@ public class SampleSceneTransform extends SceneTransformer {
                 if (type instanceof RefType) {
                     allocClass = ((RefType) type).getSootClass();
                 }
+                relativeOffset = computeRelativeOffset(method, line);
             } else {
                 Type type = null;
                 if (left instanceof Local) {
@@ -535,7 +568,7 @@ public class SampleSceneTransform extends SceneTransformer {
                     allocClass = ((RefType) type).getSootClass();
                 }
             }
-            obj = new AllocObject(line, method.getSignature() + allocSuffix, isPseudo, allocClass);
+            obj = new AllocObject(line, method.getSignature() + allocSuffix, isPseudo, allocClass, relativeOffset);
             canonicalObjects.put(allocKey, obj);
             allObjects.add(obj);
         }
