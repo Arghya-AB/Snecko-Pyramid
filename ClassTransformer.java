@@ -63,6 +63,12 @@ public class ClassTransformer extends SceneTransformer {
         }
 
 
+        // convert all base classes' getters and setters to trivial
+        Set<SootClass> baseClassSet = new HashSet<>(classInterfaceMapping.keySet());
+        for (SootClass baseClass : baseClassSet) {
+            convertGettersSettersToTrivial(baseClass);
+        }
+
         applicationClasses = new ArrayList<>(Scene.v().getApplicationClasses());
 
         // printing all classes for debugging
@@ -843,7 +849,66 @@ public class ClassTransformer extends SceneTransformer {
     // Return original type if it wasn't an array of oldClass
     return type;
 }
-    
+    public void convertGettersSettersToTrivial(SootClass sc) {
+        // 1. Snapshot the methods to avoid ConcurrentModificationException
+        List<SootMethod> methodSnapshot = new ArrayList<>(sc.getMethods());
+
+        for (SootMethod originalMethod : methodSnapshot) {
+            String name = originalMethod.getName();
+
+            // 2. Only target your synthetic getters and setters
+            if (name.startsWith("get_SAB_") || name.startsWith("set_SAB_")) {
+                
+                // 3. Map the return and parameter types
+                Type newRetType = getMappedType(originalMethod.getReturnType());
+                List<Type> newParams = new ArrayList<>();
+                for (Type t : originalMethod.getParameterTypes()) {
+                    newParams.add(getMappedType(t));
+                }
+
+                // 4. Create the new Trivial Method
+                SootMethod trivialMethod = new SootMethod(
+                    name,
+                    newParams,
+                    newRetType,
+                    originalMethod.getModifiers() & ~Modifier.ABSTRACT
+                );
+
+                // 5. Generate the Trivial Body
+                JimpleBody body = Jimple.v().newBody(trivialMethod);
+                trivialMethod.setActiveBody(body);
+
+                // Identity: this
+                if (!trivialMethod.isStatic()) {
+                    Local thisLocal = Jimple.v().newLocal("thisLocal", sc.getType());
+                    body.getLocals().add(thisLocal);
+                    body.getUnits().add(Jimple.v().newIdentityStmt(thisLocal, 
+                        Jimple.v().newThisRef(sc.getType())));
+                }
+
+                // Identity: Parameters (using the newly mapped types)
+                for (int i = 0; i < newParams.size(); i++) {
+                    Type pType = newParams.get(i);
+                    Local pLocal = Jimple.v().newLocal("param" + i, pType);
+                    body.getLocals().add(pLocal);
+                    body.getUnits().add(Jimple.v().newIdentityStmt(pLocal, 
+                        Jimple.v().newParameterRef(pType, i)));
+                }
+
+                // Return Statement
+                if (newRetType instanceof VoidType) {
+                    body.getUnits().add(Jimple.v().newReturnVoidStmt());
+                } else {
+                    // Uses your existing getDefaultValue logic
+                    body.getUnits().add(Jimple.v().newReturnStmt(getDefaultValue(newRetType)));
+                }
+
+                // 6. Swap the methods in the class
+                sc.removeMethod(originalMethod);
+                sc.addMethod(trivialMethod);
+            }
+        }
+    }
     // public static void addGettersToClass(SootClass sc) {
     //     // We use a copy of the field list to avoid ConcurrentModificationException 
     //     // if we were adding fields (though here we are only reading them).
