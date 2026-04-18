@@ -151,6 +151,10 @@ public class ClassTransformer extends SceneTransformer {
                     // if (!method.isStatic())
                     replaceClassInMethodForGet(newMethod, currClass, newClass, liveFields);                
                 }
+                if (methodName.startsWith("set_SAB")) {
+                    // if (!method.isStatic())
+                    replaceClassInMethodForSet(newMethod, currClass, newClass, liveFields);                
+                }
                 newMethod.setSource(null);
                 newClass.addMethod(newMethod);
                 continue;                          // ← drop the method entirely
@@ -180,6 +184,10 @@ public class ClassTransformer extends SceneTransformer {
                 // if (!method.isStatic())
                 replaceClassInMethodForGet(newMethod, currClass, newClass, liveFields);                
             }
+            if (methodName.startsWith("set_SAB")) {
+                // if (!method.isStatic())
+                replaceClassInMethodForSet(newMethod, currClass, newClass, liveFields);                
+            } 
 
             newMethod.setSource(null);
             newClass.addMethod(newMethod);
@@ -244,7 +252,7 @@ public class ClassTransformer extends SceneTransformer {
     /**
      * Helper to decide if a type needs mapping to an interface or a new array base.
      */
-    private Type getMappedType(Type t) {
+    private static Type getMappedType(Type t) {
         if (t instanceof RefType) {
             SootClass originalClass = ((RefType) t).getSootClass();
             SootClass interfaceMapped = classInterfaceMapping.get(originalClass);
@@ -329,21 +337,113 @@ public class ClassTransformer extends SceneTransformer {
     }
     
     public static void addSettersToClass(SootClass sc) {
-        List<SootField> fields = new ArrayList<>(getAllFields(sc));
+            List<SootField> fields = new ArrayList<>(getAllFields(sc));
 
-        for (SootField field : fields) {
-            SootClass owner = field.getDeclaringClass();
-            Type fieldType = field.getType();
-            boolean isArray = fieldType instanceof ArrayType;
+            for (SootField field : fields) {
+                SootClass owner = field.getDeclaringClass();
+                Type fieldType = field.getType();
+                boolean isArray = fieldType instanceof ArrayType;
 
-            // --- 1. Generate the standard setter (Indexed for arrays, direct for others) ---
-            String standardMethodName = "set_SAB_" + owner.getShortName() + field.getName();
-            createAndAddSetter(sc, field, standardMethodName, false);
+                // --- 1. Generate the standard setter (Indexed for arrays, direct for others) ---
+                String standardMethodName = "set_SAB_" + owner.getShortName() + field.getName();
+                createAndAddSetter(sc, field, standardMethodName, false);
 
-            // --- 2. Generate the "Whole Array" setter if it's an array ---
-            if (isArray) {
-                String arrayMethodName = "set_SAB_Array_" + owner.getShortName() + field.getName();
-                createAndAddSetter(sc, field, arrayMethodName, true);
+                // --- 2. Generate the "Whole Array" setter if it's an array ---
+                if (isArray) {
+                    String arrayMethodName = "set_SAB_Array_" + owner.getShortName() + field.getName();
+                    createAndAddSetter(sc, field, arrayMethodName, true);
+                }
+            }
+        }
+
+    public static void replaceClassInMethodForSet(SootMethod method, SootClass baseClass, SootClass currClass, Set<SootField> liveFields) {
+        if (!method.hasActiveBody()) return;
+
+        Body body = method.getActiveBody();
+        Type currClassType = currClass.getType();
+
+        // 1. Map Method Metadata (Return is void, but we update Parameters)
+        List<Type> params = new ArrayList<>(method.getParameterTypes());
+        for (int i = 0; i < params.size(); i++) {
+            params.set(i, getMappedType(params.get(i)));
+        }
+        method.setParameterTypes(params);
+
+        // 2. Resolve Parent Class Logic
+        SootClass parentClass = null;
+        SootClass parentBaseClass = null;
+        for (Local local : body.getLocals()) {
+            if (local.getName().equals("parentThis")) {
+                SootClass originalParent = ((RefType) local.getType()).getSootClass();
+                parentBaseClass = originalParent;
+                parentClass = mapping.get(new ClassFieldGroup(originalParent, liveFields));
+            }
+        }
+        Type parentType = (parentClass != null) ? parentClass.getType() : null;
+
+        // 3. Update All Local Variable Types
+        for (Local local : body.getLocals()) {
+            String name = local.getName();
+            Type t = local.getType();
+
+            if (name.equals("thisLocal")) {
+                local.setType(currClassType);
+            } else if (name.equals("parentThis")) {
+                local.setType(parentType);
+            } else if (name.equals("val") || name.equals("newVal")) {
+                // These hold the value being set - map to Interface or new ArrayType
+                local.setType(getMappedType(t));
+            } else if (name.equals("tempArray")) {
+                // These hold the array reference for indexed setters
+                local.setType(getMappedType(t));
+            }
+            // 'idx' is IntType, so it is ignored by getMappedType automatically
+        }
+
+        // 4. Update the Units (Instructions)
+        for (Unit unit : body.getUnits()) {
+            
+            // Handle Identity Statements
+            if (unit instanceof IdentityStmt) {
+                IdentityStmt is = (IdentityStmt) unit;
+                if (is.getRightOp() instanceof ThisRef) {
+                    is.setRightOp(Jimple.v().newThisRef((RefType) currClassType));
+                } else if (is.getRightOp() instanceof ParameterRef) {
+                    ParameterRef pr = (ParameterRef) is.getRightOp();
+                    is.setRightOp(Jimple.v().newParameterRef(getMappedType(pr.getType()), pr.getIndex()));
+                }
+            }
+
+            // Iterate through ValueBoxes (Casts, FieldRefs, ArrayRefs)
+            for (ValueBox box : unit.getUseAndDefBoxes()) {
+                Value val = box.getValue();
+
+                // Handle Type Casts: parentThis = (Parent) thisLocal
+                if (val instanceof CastExpr) {
+                    ((CastExpr) val).setCastType(parentType);
+                }
+
+                // Handle Field References: owner.field = newVal
+                if (val instanceof FieldRef) {
+                    FieldRef fr = (FieldRef) val;
+                    SootField oldField = fr.getField();
+                    
+                    // Determine declaring class
+                    SootClass fieldRefClass = currClass;
+                    if (fr.getFieldRef().isStatic()) {
+                        fieldRefClass = oldField.getDeclaringClass(); 
+                    } else if (parentClass != null && !oldField.getDeclaringClass().equals(baseClass)) {
+                        fieldRefClass = parentClass;
+                    }
+
+                    // Update Field Reference
+                    fr.setFieldRef(Scene.v().makeFieldRef(
+                        fieldRefClass,
+                        fr.getFieldRef().name(),
+                        getMappedType(fr.getFieldRef().type()),
+                        fr.getFieldRef().isStatic()
+                    ));
+                }
             }
         }
     }
