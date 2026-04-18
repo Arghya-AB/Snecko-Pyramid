@@ -66,7 +66,7 @@ public class ClassTransformer extends SceneTransformer {
         // convert all base classes' getters and setters to trivial
         Set<SootClass> baseClassSet = new HashSet<>(classInterfaceMapping.keySet());
         for (SootClass baseClass : baseClassSet) {
-            convertGettersSettersToTrivial(baseClass);
+            convertBaseClassGettersSetters(baseClass);
         }
 
         applicationClasses = new ArrayList<>(Scene.v().getApplicationClasses());
@@ -220,6 +220,100 @@ public class ClassTransformer extends SceneTransformer {
         mapping.put(new ClassFieldGroup(currClass, liveFields), newClass);
 
     }
+
+    public void convertBaseClassGettersSetters(SootClass sc) {
+    // 1. Snapshot methods to allow signature changes safely
+    List<SootMethod> methodSnapshot = new ArrayList<>(sc.getMethods());
+
+    for (SootMethod method : methodSnapshot) {
+        String name = method.getName();
+
+        // 2. Filter for SAB Getters and Setters
+        if (name.startsWith("get_SAB_") || name.startsWith("set_SAB_")) {
+            if (!method.hasActiveBody()) continue;
+
+            Body body = method.getActiveBody();
+
+            // 3. Transform Signature (Return Type and Parameters)
+            Type newRetType = getMappedType(method.getReturnType());
+            method.setReturnType(newRetType);
+
+            List<Type> params = new ArrayList<>(method.getParameterTypes());
+            for (int i = 0; i < params.size(); i++) {
+                params.set(i, getMappedType(params.get(i)));
+            }
+            method.setParameterTypes(params);
+
+            // 4. Resolve Parent Mapping for casting logic
+            SootClass parentClass = null;
+            for (Local local : body.getLocals()) {
+                if (local.getName().equals("parentThis")) {
+                    SootClass originalParent = ((RefType) local.getType()).getSootClass();
+                    parentClass = originalParent;
+                }
+            }
+            Type parentType = (parentClass != null) ? parentClass.getType() : null;
+
+            // 5. Update Local Variable Types
+            for (Local local : body.getLocals()) {
+                String localName = local.getName();
+                // Map locals that handle class-specific data
+                if (localName.equals("thisLocal")) {
+                    local.setType(sc.getType());
+                } else if (localName.equals("parentThis")) {
+                    local.setType(parentType);
+                } else if (localName.equals("retVal") || localName.equals("val") || 
+                           localName.equals("newVal") || localName.equals("tempArray")) {
+                    local.setType(getMappedType(local.getType()));
+                }
+            }
+
+            // 6. Update Instructions (Units)
+            for (Unit unit : body.getUnits()) {
+                
+                // Identity Statements: @this and @parameter
+                if (unit instanceof IdentityStmt) {
+                    IdentityStmt is = (IdentityStmt) unit;
+                    if (is.getRightOp() instanceof ThisRef) {
+                        is.setRightOp(Jimple.v().newThisRef(sc.getType()));
+                    } else if (is.getRightOp() instanceof ParameterRef) {
+                        ParameterRef pr = (ParameterRef) is.getRightOp();
+                        is.setRightOp(Jimple.v().newParameterRef(getMappedType(pr.getType()), pr.getIndex()));
+                    }
+                }
+
+                // Value Boxes: Casts and Field References
+                for (ValueBox box : unit.getUseAndDefBoxes()) {
+                    Value val = box.getValue();
+
+                    if (val instanceof CastExpr) {
+                        ((CastExpr) val).setCastType(parentType);
+                    }
+
+                    if (val instanceof FieldRef) {
+                        FieldRef fr = (FieldRef) val;
+                        SootField oldField = fr.getField();
+                        
+                        // Decide which class the field reference should point to
+                        SootClass fieldRefClass = sc;
+                        if (fr.getFieldRef().isStatic()) {
+                            fieldRefClass = oldField.getDeclaringClass();
+                        } else if (parentClass != null && !oldField.getDeclaringClass().equals(sc)) {
+                            fieldRefClass = parentClass;
+                        }
+
+                        fr.setFieldRef(Scene.v().makeFieldRef(
+                            fieldRefClass,
+                            fr.getFieldRef().name(),
+                            getMappedType(fr.getFieldRef().type()),
+                            fr.getFieldRef().isStatic()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
 
     public void interfaceTypeFixer(SootClass interfaceClass) {
         // Only process if it's actually an interface
