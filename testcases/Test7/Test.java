@@ -5,7 +5,7 @@ class A {
 
 public class Test {
     public static void main(String[] args) {
-        int iterations = 10_000_000;
+        int iterations = 100000;
         A[] keeper = new A[iterations];
 
         System.out.println("Starting allocations...");
@@ -17,12 +17,5 @@ public class Test {
         }
 
         System.out.println("Allocations complete. Last value: " + keeper[iterations - 1].f1);
-
-        try {
-            System.out.println("jmap time");
-            Thread.sleep(60000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
     }
 }

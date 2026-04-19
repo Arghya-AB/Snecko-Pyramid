@@ -33,14 +33,14 @@ class CannonTower extends Tower {
 }
 
 public class Test {
-    static final int NUM_WARRIORS = 100;
-    static final int NUM_TOWERS = 50;
-    static final int SIM_ROUNDS = 5;
+    static final int NUM_WARRIORS = 10000;
+    static final int NUM_TOWERS = 500;
+    static final int SIM_ROUNDS = 50;
 
     public static void main(String[] args) {
         long totalDamage = 0;
         int survivingHp = 0;
-        
+
         // Create warriors
         for (int i = 0; i < NUM_WARRIORS; i++) {
             Warrior w = new Warrior();
@@ -56,7 +56,7 @@ public class Test {
             t.uid = NUM_WARRIORS + i;
             t.range = 5 + (i % 10);
             t.damage = 30 + (i % 15);
-            
+
             for (int round = 0; round < SIM_ROUNDS; round++) {
                 totalDamage += t.damage;
             }
