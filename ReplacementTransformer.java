@@ -270,7 +270,15 @@ public class ReplacementTransformer extends SceneTransformer {
       return;
 
     Local baseLocal = (Local) base;
-    SootClass ownerClass = declaringClass;
+
+    SootClass ownerClass;
+    try {
+      SootField actualField = fieldRef.resolve();
+      ownerClass = actualField.getDeclaringClass();
+    } catch (Exception e) {
+      // failed resolution
+      ownerClass = declaringClass;
+    }
 
     Value right = assign.getRightOp();
     Type rightType = right.getType();
@@ -328,7 +336,15 @@ public class ReplacementTransformer extends SceneTransformer {
       return;
 
     Local baseLocal = (Local) base;
-    SootClass ownerClass = declaringClass;
+
+    SootClass ownerClass;
+    try {
+      SootField actualField = fieldRef.resolve();
+      ownerClass = actualField.getDeclaringClass();
+    } catch (Exception e) {
+      ownerClass = declaringClass;
+    }
+
     String getterName = "get_SAB_" + ownerClass.getShortName() + fieldName;
 
     Type baseType = baseLocal.getType();
@@ -457,7 +473,8 @@ public class ReplacementTransformer extends SceneTransformer {
 
     SootClass declaringClass = methodRef.getDeclaringClass();
     SootClass mappedDeclaringClass = classInterfaceMapping.get(declaringClass);
-    if (mappedDeclaringClass == null) mappedDeclaringClass = declaringClass;
+    if (mappedDeclaringClass == null)
+      mappedDeclaringClass = declaringClass;
 
     SootMethodRef newMethodRef = Scene.v().makeMethodRef(
         mappedDeclaringClass,
@@ -817,7 +834,15 @@ public class ReplacementTransformer extends SceneTransformer {
       return;
 
     Local baseLocal = (Local) base;
-    SootClass ownerClass = declaringClass;
+
+    SootClass ownerClass;
+    try {
+      SootField actualField = fieldRef.resolve();
+      ownerClass = actualField.getDeclaringClass();
+    } catch (Exception e) {
+      ownerClass = declaringClass;
+    }
+
     String setterName = "set_SAB_" + ownerClass.getShortName() + fieldName;
 
     Value right = assign.getRightOp();
@@ -874,7 +899,15 @@ public class ReplacementTransformer extends SceneTransformer {
       return;
 
     Local baseLocal = (Local) base;
-    SootClass ownerClass = declaringClass;
+
+    SootClass ownerClass;
+    try {
+      SootField actualField = fieldRef.resolve();
+      ownerClass = actualField.getDeclaringClass();
+    } catch (Exception e) {
+      ownerClass = declaringClass;
+    }
+
     String getterName = "get_SAB_" + ownerClass.getShortName() + fieldName;
 
     Type baseType = baseLocal.getType();
