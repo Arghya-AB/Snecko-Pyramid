@@ -1,20 +1,33 @@
-class A {
-    float f1, f2, f3, f4, f5, f6, f7, f8, f9, f10;
+// Test11: DCE advantage - Multi-level inheritance with selective field usage
+// Fields accessed through different levels of hierarchy
+class Shape {
+    public int id; // ACTIVE 
+    public int type; // DIE 
+}
+
+class Rectangle extends Shape {
+    public int width; // ACTIVE 
+    public int height; // ACTIVE
+    public int area; // DIE
+}
+
+class Square extends Rectangle {
+    public int side; // ACTIVE
+    public int rotation; // DIE
 }
 
 public class Test {
     public static void main(String[] args) {
-        int iterations = 100000;
-        A[] keeper = new A[iterations];
-
-        System.out.println("Starting allocations...");
-
-        for (int i = 0; i < iterations; i++) {
-            A obj = new A();
-            obj.f1 = i * 1.5f; // only using f1
-            keeper[i] = obj;
+        int total = 0;
+        for (int i = 1; i <= 30000000; i++) {
+            Square sq = new Square();
+            sq.id = i;           
+            sq.width = i * 10;   
+            sq.height = i * 10;  
+            sq.side = i;         
+            total += sq.id + sq.width + sq.height + sq.side;
         }
-
-        System.out.println("Allocations complete. Last value: " + keeper[iterations - 1].f1);
+        System.out.println("Total: " + total);
+        System.out.println("Expected: 132");
     }
 }
