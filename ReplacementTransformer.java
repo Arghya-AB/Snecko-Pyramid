@@ -125,6 +125,8 @@ public class ReplacementTransformer extends SceneTransformer {
         // transform field accesses and new expressions
         if (right instanceof NewExpr) {
           transformNewExpr(assign, body, 0, generatedLocalMap);
+        } else if (right instanceof NewArrayExpr) {
+          transformNewArrayExpr(assign, body);
         } else if (left instanceof InstanceFieldRef) {
           transformFieldStore((InstanceFieldRef) left, assign, body);
         } else if (right instanceof InstanceFieldRef) {
@@ -684,6 +686,8 @@ public class ReplacementTransformer extends SceneTransformer {
         updateTypesInValue(right, body);
         if (right instanceof NewExpr) {
           transformNewExprInGenerated(assign, body, originalClassName, generatedLocalMap);
+        } else if (right instanceof NewArrayExpr) {
+          transformNewArrayExpr(assign, body);
         } else if (left instanceof InstanceFieldRef) {
           transformFieldStoreInGenerated((InstanceFieldRef) left, assign, body);
         } else if (right instanceof InstanceFieldRef) {
@@ -823,6 +827,24 @@ public class ReplacementTransformer extends SceneTransformer {
     }
 
     return generatedClass;
+  }
+
+  private void transformNewArrayExpr(AssignStmt assign, Body body) {
+    Value right = assign.getRightOp();
+    if (!(right instanceof NewArrayExpr))
+      return;
+
+    NewArrayExpr newArrayExpr = (NewArrayExpr) right;
+    Type elementType = newArrayExpr.getBaseType();
+
+    if (elementType instanceof RefType) {
+      SootClass elementClass = ((RefType) elementType).getSootClass();
+      SootClass interfaceClass = classInterfaceMapping.get(elementClass);
+      if (interfaceClass != null) {
+        NewArrayExpr newExpr = Jimple.v().newNewArrayExpr(interfaceClass.getType(), newArrayExpr.getSize());
+        assign.setRightOp(newExpr);
+      }
+    }
   }
 
   private void transformFieldStoreInGenerated(InstanceFieldRef leftRef, AssignStmt assign, Body body) {
