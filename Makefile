@@ -15,6 +15,10 @@ clean:
 	rm -f ./testcases/$(FOLDER)/*.class
 	rm -f *.class
 
+test:
+	cd ./testcases/$(FOLDER)
+	java -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:gc Test
+	find . -type f -name "*.class" -exec ls -l {} + | awk '{total += $5} END {print total " bytes"}'
 
 # SHELL:= /bin/bash
 # TEST = TestCase1_Branch

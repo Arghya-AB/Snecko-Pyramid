@@ -1,29 +1,29 @@
 // Test10: DCE advantage - Ghost objects vs active objects
-// Some objects have fields written but never read (ghosts)
-// Some objects have fields written AND read (active)
+// Some objects have fields written but never read
+// Some objects have fields written AND read
 class Metric {
-    public int metricId; // live - accessed
-    public int sourceId; // die - never accessed
-    public int unitCode; // die - never accessed
+    public int metricId; // live
+    public int sourceId; // die
+    public int unitCode; // die
 }
 
 class TimedMetric extends Metric {
-    public int valueMs; // live - accessed
-    public int intervalMs;// die - never accessed
-    public int offsetMs; // die - never accessed
+    public int valueMs; // live
+    public int intervalMs;// die
+    public int offsetMs; // die
 }
 
 class AggMetric extends TimedMetric {
-    public int count; // live - accessed
-    public int minVal; // die - never accessed
-    public int maxVal; // die - never accessed
-    public int variance; // die - never accessed
-    public int stdDev; // die - never accessed
+    public int count; // live
+    public int minVal; // die
+    public int maxVal; // die
+    public int variance; // die
+    public int stdDev; // die
 }
 
 public class Test {
-    static final int ACTIVE_METRICS = 30;
-    static final int GHOST_METRICS = 70;
+    static final int ACTIVE_METRICS = 100000000;
+    static final int GHOST_METRICS = 100000000;
 
     public static void main(String[] args) {
         long runningTotal = 0;
@@ -34,7 +34,6 @@ public class Test {
             ghost.metricId = i;
             ghost.valueMs = i * 4;
             ghost.count = i % 10;
-            // Fields are written but never read back
         }
 
         // Active objects: fields written AND read

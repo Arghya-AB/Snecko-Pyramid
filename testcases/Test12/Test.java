@@ -17,10 +17,10 @@ class DataContainer {
 public class Test {
     public static void main(String[] args) {
         DataContainer container = new DataContainer();
-        container.items = new DataItem[5];
+        container.items = new DataItem[10000000];
 
         int sum = 0;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 10000000; i++) {
             DataItem item = new DataItem();
             item.key = i;
             item.value = i * i;
@@ -30,7 +30,7 @@ public class Test {
 
         // Access through array
         int arraySum = 0;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 10000000; i++) {
             arraySum += container.items[i].key + container.items[i].value;
         }
 
