@@ -1,4 +1,4 @@
-// Tes13: All fields active - Multi-level inheritance with full field usage
+// Test9: All fields active - Multi-level inheritance with full field usage
 // Every field is accessed multiple times across all hierarchy levels
 
 class Vehicle {

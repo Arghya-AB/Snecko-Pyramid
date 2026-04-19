@@ -1,4 +1,4 @@
-// Test10: DCE advantage - Ghost objects vs active objects
+// Test6: DCE advantage - Ghost objects vs active objects
 // Some objects have fields written but never read
 // Some objects have fields written AND read
 class Metric {

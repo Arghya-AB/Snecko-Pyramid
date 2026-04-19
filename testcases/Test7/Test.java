@@ -1,4 +1,4 @@
-// Test11: DCE advantage - Multi-level inheritance with selective field usage
+// Test7: DCE advantage - Multi-level inheritance with selective field usage
 // Fields accessed through different levels of hierarchy
 class Shape {
     public int id; // ACTIVE 

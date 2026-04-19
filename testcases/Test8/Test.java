@@ -1,4 +1,4 @@
-// Test12: DCE advantage - Arrays and objects with unused fields
+// Test8: DCE advantage - Arrays and objects with unused fields
 // Array of objects where only some fields are accessed
 class DataItem {
     public int key; // ACTIVE - used
