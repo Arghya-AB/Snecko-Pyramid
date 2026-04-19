@@ -2,26 +2,26 @@
 // Every field is accessed multiple times across all hierarchy levels
 
 class Vehicle {
-    public int id;       // ACTIVE - accessed in all loops
-    public int year;     // ACTIVE - accessed in computations
-    public int speed;    // ACTIVE - accessed in accumulation
+    public int id;       // ACTIVE
+    public int year;     // ACTIVE
+    public int speed;    // ACTIVE
 }
 
 class Car extends Vehicle {
-    public int doors;    // ACTIVE - accessed in computations
-    public int seats;    // ACTIVE - accessed in accumulation
-    public int engine;   // ACTIVE - accessed in scoring
+    public int doors;    // ACTIVE
+    public int seats;    // ACTIVE
+    public int engine;   // ACTIVE
 }
 
 class SportsCar extends Car {
-    public int turbo;    // ACTIVE - accessed in scoring
-    public int nitro;    // ACTIVE - accessed in accumulation
-    public int rating;   // ACTIVE - accessed in final sum
+    public int turbo;    // ACTIVE
+    public int nitro;    // ACTIVE
+    public int rating;   // ACTIVE
 }
 
 public class Test {
-    static final int ITERATIONS   = 20;   // loop repetitions per object
-    static final int NUM_OBJECTS  = 10000000;   // number of SportsCar instances
+    static final int ITERATIONS   = 20;
+    static final int NUM_OBJECTS  = 10000000;
 
 
     public static void main(String[] args) {

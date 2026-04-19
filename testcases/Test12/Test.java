@@ -1,17 +1,17 @@
 // Test12: DCE advantage - Arrays and objects with unused fields
 // Array of objects where only some fields are accessed
 class DataItem {
-    public int key; // ACTIVE - used
-    public int value; // ACTIVE - used
-    public int hash; // DIE - computed but never read
-    public int flags; // DIE - not used
-    public DataItem next; // DIE - not used
+    public int key; // ACTIVE
+    public int value; // ACTIVE
+    public int hash; // DIE
+    public int flags; // DIE
+    public DataItem next; // DIE
 }
 
 class DataContainer {
-    public DataItem[] items; // ACTIVE - used
-    public int count; // DIE - not used
-    public int capacity; // DIE - not used
+    public DataItem[] items; // ACTIVE
+    public int count; // DIE
+    public int capacity; // DIE
 }
 
 public class Test {
