@@ -1,35 +1,34 @@
-// Test9: DCE advantage - Multiple class hierarchies with direct field access
 // Entity -> Unit -> Warrior and Entity -> Tower -> CannonTower
 class Entity {
-    public int uid; // live - accessed
-    public int typeCode; // die - never accessed
-    public int regionId; // die - never accessed
+    public int uid; // live
+    public int typeCode; // die
+    public int regionId; // die
 }
 
 class Unit extends Entity {
-    public int hp; // live - accessed
-    public int maxHp; // die - never accessed
-    public int defense; // die - never accessed
-    public int level; // die - never accessed
+    public int hp; // live
+    public int maxHp; // die
+    public int defense; // die
+    public int level; // die
 }
 
 class Warrior extends Unit {
-    public int attack; // live - accessed
-    public int stamina; // die - never accessed
-    public int rage; // die - never accessed
+    public int attack; // live
+    public int stamina; // die
+    public int rage; // die
 }
 
 class Tower extends Entity {
-    public int range; // live - accessed
-    public int cooldown; // die - never accessed
-    public int upgLevel; // die - never accessed
+    public int range; // live
+    public int cooldown; // die
+    public int upgLevel; // die
 }
 
 class CannonTower extends Tower {
-    public int damage; // live - accessed
-    public int splashRadius; // die - never accessed
-    public int reloadTime; // die - never accessed
-    public int ammo; // die - never accessed
+    public int damage; // live
+    public int splashRadius; // die
+    public int reloadTime; // die
+    public int ammo; // die
 }
 
 public class Test {
@@ -64,6 +63,5 @@ public class Test {
 
         System.out.println("Total damage dealt: " + totalDamage);
         System.out.println("Total surviving HP: " + survivingHp);
-        System.out.println("Expected: damage=8875, hp=7450");
     }
 }

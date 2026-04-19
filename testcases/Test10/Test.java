@@ -27,7 +27,7 @@ public class Test {
 
     public static void main(String[] args) {
         long runningTotal = 0;
-        
+
         // Ghost objects: allocated, fields written, but never read
         for (int i = 0; i < GHOST_METRICS; i++) {
             AggMetric ghost = new AggMetric();
@@ -42,11 +42,10 @@ public class Test {
             active.metricId = GHOST_METRICS + i;
             active.valueMs = i * 11;
             active.count = 1 + (i % 8);
-            
+
             runningTotal += (long) active.valueMs * active.count;
         }
 
         System.out.println("Final total: " + runningTotal);
-        System.out.println("Expected: 50265");
     }
 }
