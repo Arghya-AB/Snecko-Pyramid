@@ -144,9 +144,13 @@ public class ReplacementTransformer extends SceneTransformer {
       }
     }
 
+    Local thisLocal = findThisLocal(body);
+
     // 3: update all local variable types to interface types
     for (Local local : body.getLocals()) {
       if (local.getName().startsWith("temp_alloc_"))
+        continue;
+      if (thisLocal != null && local.equals(thisLocal))
         continue;
       Type newType = getMappedType(local.getType());
       if (!local.getType().equals(newType)) {
@@ -393,16 +397,8 @@ public class ReplacementTransformer extends SceneTransformer {
     Value right = istmt.getRightOp();
     if (right instanceof ThisRef) {
       SootClass currentClass = body.getMethod().getDeclaringClass();
-      if (isGeneratedClass(currentClass.getName())) {
-        // In generated class: @this should be current generated class type
-        istmt.setRightOp(Jimple.v().newThisRef(currentClass.getType()));
-      } else {
-        // In original class: @this should be interface type
-        SootClass interfaceClass = classInterfaceMapping.get(currentClass);
-        if (interfaceClass != null) {
-          istmt.setRightOp(Jimple.v().newThisRef(interfaceClass.getType()));
-        }
-      }
+      // Always use concrete class type for @this
+      istmt.setRightOp(Jimple.v().newThisRef(currentClass.getType()));
     }
   }
 
@@ -472,9 +468,15 @@ public class ReplacementTransformer extends SceneTransformer {
     Type newReturnType = getMappedType(methodRef.getReturnType());
 
     SootClass declaringClass = methodRef.getDeclaringClass();
-    SootClass mappedDeclaringClass = classInterfaceMapping.get(declaringClass);
-    if (mappedDeclaringClass == null)
+    SootClass mappedDeclaringClass;
+    if (methodRef.getName().equals("<init>")) {
+      // for constructors, keep original class
       mappedDeclaringClass = declaringClass;
+    } else {
+      mappedDeclaringClass = classInterfaceMapping.get(declaringClass);
+      if (mappedDeclaringClass == null)
+        mappedDeclaringClass = declaringClass;
+    }
 
     SootMethodRef newMethodRef = Scene.v().makeMethodRef(
         mappedDeclaringClass,
