@@ -22,6 +22,5 @@ public class Test {
             sum += obj.getField5();
         }
         System.out.println("Sum of field5 values: " + sum);
-        System.out.println("Expected: 210 (5 * 42)");
     }
 }
