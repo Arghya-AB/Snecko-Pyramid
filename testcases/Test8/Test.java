@@ -1,48 +1,41 @@
-class Node {
-    public int id; // live
-    public int weight; // die
-    public int color; // die
+// Test12: DCE advantage - Arrays and objects with unused fields
+// Array of objects where only some fields are accessed
+class DataItem {
+    public int key; // ACTIVE - used
+    public int value; // ACTIVE - used
+    public int hash; // DIE - computed but never read
+    public int flags; // DIE - not used
+    public DataItem next; // DIE - not used
 }
 
-class GraphNode extends Node {
-    public int degree; // live
-    public int component; // die
-    public int visited; // di
-}
-
-class WeightedNode extends GraphNode {
-    public int edgeWeight; // live
-    public int heuristic; // die
-    public int potential; // die
-    public int flow; // die
+class DataContainer {
+    public DataItem[] items; // ACTIVE - used
+    public int count; // DIE - not used
+    public int capacity; // DIE - not used
 }
 
 public class Test {
     public static void main(String[] args) {
-        int n = 100;
-        int totalDegree = 0;
-        int maxEdge = 0;
+        DataContainer container = new DataContainer();
+        container.items = new DataItem[10000000];
 
-        for (int i = 0; i < n; i++) {
-            WeightedNode node = new WeightedNode();
-            node.id = i;
-            node.degree = i * 2;
-            node.edgeWeight = i * 3 + 1;
-
-            totalDegree += node.degree;
-            if (node.edgeWeight > maxEdge) {
-                maxEdge = node.edgeWeight;
-            }
+        int sum = 0;
+        for (int i = 0; i < 10000000; i++) {
+            DataItem item = new DataItem();
+            item.key = i;
+            item.value = i * i;
+            container.items[i] = item;
+            sum += item.key + item.value;
         }
 
-        // Extra nodes that only use id
-        for (int i = 0; i < 3; i++) {
-            WeightedNode extra = new WeightedNode();
-            extra.id = n + i;
-            // degree and edgeWeight are never set or read on extras
+        // Access through array
+        int arraySum = 0;
+        for (int i = 0; i < 10000000; i++) {
+            arraySum += container.items[i].key + container.items[i].value;
         }
 
-        System.out.println("Total degree: " + totalDegree);
-        System.out.println("Max edge weight: " + maxEdge);
+        System.out.println("Direct sum: " + sum);
+        System.out.println("Array sum: " + arraySum);
+        System.out.println("Expected: 60 for both");
     }
 }
