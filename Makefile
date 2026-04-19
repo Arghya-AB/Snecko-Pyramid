@@ -10,6 +10,7 @@ compile:
 	javac ./testcases/$(FOLDER)/Test.java
 	javac -cp .:soot-4.6.0-jar-with-dependencies.jar Main.java
 clean:
+	rm -f ./sootOutput/*.class
 	rm -f ./sootOutput/*.jimple
 	rm -f ./testcases/$(FOLDER)/*.class
 	rm -f *.class

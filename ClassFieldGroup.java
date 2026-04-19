@@ -9,7 +9,6 @@ public class ClassFieldGroup {
         this.sc = sc;
         Set<SootField> liveFields = new HashSet<>(fields);
         Set<SootField> allFields = getAllFields(sc);
-        // only keeping liveFields which are part of allFields i.e. intersection
         liveFields.retainAll(allFields);
         this.fields = liveFields;
     }
@@ -21,7 +20,6 @@ public class ClassFieldGroup {
         while (currentClass != null) {
             allFields.addAll(currentClass.getFields());
             
-            // Check if there is a superclass and if it's not java.lang.Object (optional stop)
             if (currentClass.hasSuperclass()) {
                 currentClass = currentClass.getSuperclass();
             } else {
@@ -39,7 +37,6 @@ public class ClassFieldGroup {
         return fields;
     }
 
-    // Equals implementation
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -49,18 +46,9 @@ public class ClassFieldGroup {
                Objects.equals(fields, that.fields);
     }
 
-    // HashCode implementation
     @Override
     public int hashCode() {
         return Objects.hash(sc, fields);
-    }
-
-    @Override
-    public String toString() {
-        return "ClassFieldGroup{" +
-                "class=" + (sc != null ? sc.getName() : "null") +
-                ", fieldsCount=" + (fields != null ? fields.size() : 0) +
-                '}';
     }
 
 }
