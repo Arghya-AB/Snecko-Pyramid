@@ -124,7 +124,7 @@ public class ReplacementTransformer extends SceneTransformer {
 
         // transform field accesses and new expressions
         if (right instanceof NewExpr) {
-          transformNewExpr(assign, body, 0, generatedLocalMap);
+          transformNewExpr(assign, body, computeRelativeOffset(body, assign), generatedLocalMap);
         } else if (right instanceof NewArrayExpr) {
           transformNewArrayExpr(assign, body);
         } else if (left instanceof InstanceFieldRef) {
@@ -253,7 +253,7 @@ public class ReplacementTransformer extends SceneTransformer {
     for (Map.Entry<AllocObject, Set<SootField>> entry : liveFields.entrySet()) {
       AllocObject alloc = entry.getKey();
       if (alloc.getStClass() != null && alloc.getStClass().equals(originalClass)) {
-        if (alloc.getLineNumber() == lineNumber) {
+        if (lineNumber >= 0 && alloc.getLineNumber() == lineNumber) {
           return alloc;
         }
         if (alloc.getRelativeOffset() >= 0 && alloc.getRelativeOffset() == relativeOffset &&
@@ -586,10 +586,10 @@ public class ReplacementTransformer extends SceneTransformer {
     return existing != null ? existing : -1;
   }
 
-  private int computeRelativeOffset(Body body, int lineNumber) {
+  private int computeRelativeOffset(Body body, Unit targetUnit) {
     int offset = 0;
     for (Unit u : body.getUnits()) {
-      if (getLineNumber(u) == lineNumber) {
+      if (u == targetUnit) {
         return offset;
       }
       offset++;
@@ -773,10 +773,10 @@ public class ReplacementTransformer extends SceneTransformer {
       return null;
 
     int lineNumber = getLineNumber(assign);
-    String methodSig = body.getMethod().getSignature();
+    String methodSig = buildOriginalMethodSignature(body.getMethod(), originalClassName);
 
     AllocObject matchingAlloc = findAllocObject(originalClass, methodSig, lineNumber,
-        computeRelativeOffset(body, lineNumber));
+        computeRelativeOffset(body, assign));
 
     Set<SootField> liveFieldsForAlloc = null;
     if (matchingAlloc != null) {
@@ -829,6 +829,10 @@ public class ReplacementTransformer extends SceneTransformer {
     return generatedClass;
   }
 
+  private String buildOriginalMethodSignature(SootMethod method, String originalClassName) {
+    return "<" + originalClassName + ": " + method.getSubSignature() + ">";
+  }
+
   private void transformNewArrayExpr(AssignStmt assign, Body body) {
     Value right = assign.getRightOp();
     if (!(right instanceof NewArrayExpr))
@@ -874,7 +878,11 @@ public class ReplacementTransformer extends SceneTransformer {
     SootClass interfaceClass = null;
     if (baseType instanceof RefType) {
       SootClass baseClass = ((RefType) baseType).getSootClass();
-      interfaceClass = classInterfaceMapping.get(baseClass);
+      if (baseClass.isInterface()) {
+        interfaceClass = baseClass;
+      } else {
+        interfaceClass = classInterfaceMapping.get(baseClass);
+      }
     }
 
     // use interface class for method ref if available, otherwise use the concrete
@@ -887,9 +895,9 @@ public class ReplacementTransformer extends SceneTransformer {
     Local castLocal = Jimple.v().newLocal("$r_cast_" + (castCounter++), methodRefType);
     body.getLocals().add(castLocal);
 
-    // cast: $r_cast_X = (Interface) baseLocal
     CastExpr castExpr = Jimple.v().newCastExpr(baseLocal, methodRefType);
     AssignStmt castStmt = Jimple.v().newAssignStmt(castLocal, castExpr);
+
     SootMethodRef setterRef = Scene.v().makeMethodRef(
         methodRefClass,
         setterName,
@@ -938,7 +946,11 @@ public class ReplacementTransformer extends SceneTransformer {
     SootClass interfaceClass = null;
     if (baseType instanceof RefType) {
       SootClass baseClass = ((RefType) baseType).getSootClass();
-      interfaceClass = classInterfaceMapping.get(baseClass);
+      if (baseClass.isInterface()) {
+        interfaceClass = baseClass;
+      } else {
+        interfaceClass = classInterfaceMapping.get(baseClass);
+      }
     }
 
     SootClass methodRefClass = interfaceClass != null ? interfaceClass : ownerClass;
